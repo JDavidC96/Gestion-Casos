@@ -1,5 +1,4 @@
 // lib/screens/case_detail_screen.dart
-import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -144,7 +143,6 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
         });
       }
     } catch (e) {
-      print('Error cargando caso: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error cargando caso: $e')),
@@ -179,12 +177,9 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
           }
         });
 
-        if (resultado['ubicacion'] != null) {
-          print('Ubicación: ${GeolocationService.formatearUbicacion(resultado['ubicacion'])}');
-        }
       }
     } catch (e) {
-      print('Error tomando foto: $e');
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error al tomar foto: $e')),
@@ -385,7 +380,6 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
         );
       }
     } catch (e) {
-      print('Error guardando estado cerrado: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

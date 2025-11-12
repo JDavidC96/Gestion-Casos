@@ -10,7 +10,7 @@ class CameraService {
   static final ImagePicker _picker = ImagePicker();
   
   // URL de tu Google Apps Script
-  static const String _scriptUrl = 'https://script.google.com/macros/s/AKfycbysQi3O-gCX_whDHg0Qq6XiUQ1eqmHUl6xHUIMLFRf5Uwi7uLDzqLzLoBM9H979a8KI/exec';
+  static const String _scriptUrl = 'link_a_tu_script_de_google_appss';
 
   /// Tomar foto con cámara y subirla a Google Drive
   static Future<Map<String, dynamic>?> tomarFoto() async {
