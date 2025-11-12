@@ -6,11 +6,13 @@ import '../utils/icon_utils.dart';
 class CentroTrabajoCard extends StatelessWidget {
   final CentroTrabajo centro;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
   const CentroTrabajoCard({
     super.key,
     required this.centro,
     required this.onTap,
+    this.onLongPress,
   });
 
   @override

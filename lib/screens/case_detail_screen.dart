@@ -1,18 +1,15 @@
-// screens/case_detail_screen.dart
+// lib/screens/case_detail_screen.dart
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:signature/signature.dart';
 import 'package:geolocator/geolocator.dart';
-import '../providers/case_provider.dart';
-import '../models/case_model.dart';
-import '../models/case_detail_data.dart';
-import '../services/geolocation_service.dart';
+import '../services/firebase_service.dart';
 import '../services/camera_service.dart';
-import '../widgets/case_state_card.dart';
-import '../widgets/closed_state_card.dart';
+import '../services/geolocation_service.dart';
+import '../widgets/case_state_card_firebase.dart';
+import '../widgets/closed_state_card_firebase.dart';
 
 class CaseDetailScreen extends StatefulWidget {
   const CaseDetailScreen({super.key});
@@ -22,23 +19,31 @@ class CaseDetailScreen extends StatefulWidget {
 }
 
 class _CaseDetailScreenState extends State<CaseDetailScreen> {
-  // Datos para estado abierto y cerrado
-  CaseDetailData _datosAbierto = CaseDetailData(
-    descripcionHallazgo: '',
-    nivelRiesgo: 'No aplica',
-    fechaCreacion: DateTime.now(),
-  );
-  
-  CaseDetailData _datosCerrado = CaseDetailData(
-    descripcionHallazgo: '',
-    nivelRiesgo: 'No aplica', 
-    fechaCreacion: DateTime.now(),
-  );
-
-  bool _casoCerrado = false;
+  String? _casoId;
+  Map<String, dynamic>? _casoData;
+  bool _isLoading = false;
   bool _tomandoFoto = false;
-  bool _casoAbiertoGuardado = false;
-  bool _casoCerradoGuardado = false;
+  bool _casoCerrado = false;
+
+  // Estado Abierto
+  String _descripcionHallazgo = '';
+  String _nivelRiesgo = 'No aplica';
+  String? _recomendacionesControl;
+  String? _fotoAbiertoPath;
+  String? _fotoAbiertoUrl;
+  Uint8List? _firmaAbierto;
+  String? _firmaAbiertoUrl;  // Agregar esto
+  Position? _ubicacionAbierto;
+  bool _estadoAbiertoGuardado = false;
+
+  // Estado Cerrado
+  String _descripcionSolucion = '';
+  String? _fotoCerradoPath;
+  String? _fotoCerradoUrl;
+  Uint8List? _firmaCerrado;
+  String? _firmaCerradoUrl;  // Agregar esto
+  Position? _ubicacionCerrado;
+  bool _estadoCerradoGuardado = false;
 
   final SignatureController _signatureController = SignatureController(
     penStrokeWidth: 3,
@@ -49,58 +54,153 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _cargarDatosExistentes();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadCaseData();
+    });
   }
 
-  void _cargarDatosExistentes() {
-    // Aquí puedes cargar datos existentes si el caso ya fue guardado parcialmente
+  void _loadCaseData() {
+    final args = ModalRoute.of(context)!.settings.arguments as Map?;
+    if (args != null) {
+      _casoId = args['casoId'] as String?;
+      if (_casoId != null) {
+        _loadFromFirestore();
+      }
+    }
   }
 
-  // Tomar foto sin marca de agua pero con geolocalización
+  Future<void> _loadFromFirestore() async {
+    if (_casoId == null) return;
+
+    try {
+      final doc = await FirebaseService.getCasoById(_casoId!);
+      if (doc.exists) {
+        final data = doc.data() as Map<String, dynamic>;
+        setState(() {
+          _casoData = data;
+          _casoCerrado = data['cerrado'] ?? false;
+
+          // Cargar estado abierto
+          final estadoAbierto = data['estadoAbierto'] as Map<String, dynamic>?;
+          if (estadoAbierto != null) {
+            _descripcionHallazgo = estadoAbierto['descripcionHallazgo'] ?? '';
+            _nivelRiesgo = estadoAbierto['nivelRiesgo'] ?? 'No aplica';
+            _recomendacionesControl = estadoAbierto['recomendacionesControl'];
+            _fotoAbiertoUrl = estadoAbierto['fotoUrl'];
+            _estadoAbiertoGuardado = estadoAbierto['guardado'] ?? false;
+            
+            // Cargar firma desde base64
+            if (estadoAbierto['firmaBase64'] != null) {
+              _firmaAbierto = CameraService.base64ToFirma(estadoAbierto['firmaBase64']);
+            }
+            
+            // Ubicación
+            if (estadoAbierto['ubicacion'] != null) {
+              final ub = estadoAbierto['ubicacion'];
+              _ubicacionAbierto = Position(
+                latitude: ub['latitude'],
+                longitude: ub['longitude'],
+                timestamp: DateTime.now(),
+                accuracy: 0,
+                altitude: 0,
+                heading: 0,
+                speed: 0,
+                speedAccuracy: 0,
+                altitudeAccuracy: 0,
+                headingAccuracy: 0,
+              );
+            }
+          }
+
+          // Cargar estado cerrado
+          final estadoCerrado = data['estadoCerrado'] as Map<String, dynamic>?;
+          if (estadoCerrado != null) {
+            _descripcionSolucion = estadoCerrado['descripcionSolucion'] ?? '';
+            _fotoCerradoUrl = estadoCerrado['fotoUrl'];
+            _estadoCerradoGuardado = estadoCerrado['guardado'] ?? false;
+            
+            // Cargar firma desde base64
+            if (estadoCerrado['firmaBase64'] != null) {
+              _firmaCerrado = CameraService.base64ToFirma(estadoCerrado['firmaBase64']);
+            }
+            
+            // Ubicación
+            if (estadoCerrado['ubicacion'] != null) {
+              final ub = estadoCerrado['ubicacion'];
+              _ubicacionCerrado = Position(
+                latitude: ub['latitude'],
+                longitude: ub['longitude'],
+                timestamp: DateTime.now(),
+                accuracy: 0,
+                altitude: 0,
+                heading: 0,
+                speed: 0,
+                speedAccuracy: 0,
+                altitudeAccuracy: 0,
+                headingAccuracy: 0,
+              );
+            }
+          }
+        });
+      }
+    } catch (e) {
+      print('Error cargando caso: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error cargando caso: $e')),
+        );
+      }
+    }
+  }
+
+  // Tomar foto
   Future<void> _tomarFoto({required bool esEstadoAbierto}) async {
     if (_tomandoFoto) return;
-    
+    if ((esEstadoAbierto && _estadoAbiertoGuardado) || 
+        (!esEstadoAbierto && _estadoCerradoGuardado)) {
+      return;
+    }
+
     setState(() => _tomandoFoto = true);
 
     try {
       final resultado = await CameraService.tomarFoto();
       
-      if (resultado != null) {
-        final foto = File((resultado['foto'] as XFile).path);
-        final ubicacion = resultado['ubicacion'] as Position?;
-
+      if (resultado != null && mounted) {
         setState(() {
           if (esEstadoAbierto) {
-            _datosAbierto = _datosAbierto.copyWith(
-              foto: foto,
-              ubicacion: ubicacion,
-            );
+            _fotoAbiertoPath = resultado['fotoPath'];
+            _fotoAbiertoUrl = resultado['driveUrl'];
+            _ubicacionAbierto = resultado['ubicacion'];
           } else {
-            _datosCerrado = _datosCerrado.copyWith(
-              foto: foto,
-              ubicacion: ubicacion,
-            );
+            _fotoCerradoPath = resultado['fotoPath'];
+            _fotoCerradoUrl = resultado['driveUrl'];
+            _ubicacionCerrado = resultado['ubicacion'];
           }
         });
 
-        if (ubicacion != null) {
-          print('Ubicación guardada: ${GeolocationService.formatearUbicacion(ubicacion)}');
+        if (resultado['ubicacion'] != null) {
+          print('Ubicación: ${GeolocationService.formatearUbicacion(resultado['ubicacion'])}');
         }
       }
     } catch (e) {
       print('Error tomando foto: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al tomar foto: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al tomar foto: $e')),
+        );
+      }
     } finally {
-      setState(() => _tomandoFoto = false);
+      if (mounted) {
+        setState(() => _tomandoFoto = false);
+      }
     }
   }
 
   // Capturar firma
   void _capturarFirma({required bool esEstadoAbierto}) {
-    if ((esEstadoAbierto && _casoAbiertoGuardado) || 
-        (!esEstadoAbierto && _casoCerradoGuardado)) {
+    if ((esEstadoAbierto && _estadoAbiertoGuardado) || 
+        (!esEstadoAbierto && _estadoCerradoGuardado)) {
       return;
     }
 
@@ -126,12 +226,12 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
             ElevatedButton(
               onPressed: () async {
                 final data = await _signatureController.toPngBytes();
-                if (data != null) {
+                if (data != null && mounted) {
                   setState(() {
                     if (esEstadoAbierto) {
-                      _datosAbierto = _datosAbierto.copyWith(firma: data);
+                      _firmaAbierto = data;
                     } else {
-                      _datosCerrado = _datosCerrado.copyWith(firma: data);
+                      _firmaCerrado = data;
                     }
                   });
                 }
@@ -145,75 +245,167 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
     );
   }
 
-  // Validar y guardar estado
-  bool _validarDatos(CaseDetailData datos, bool esEstadoAbierto) {
-    if (datos.descripcionHallazgo.trim().isEmpty) {
+  // Guardar estado abierto
+  Future<void> _guardarEstadoAbierto() async {
+    if (_casoId == null) return;
+
+    // Validaciones
+    if (_descripcionHallazgo.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(esEstadoAbierto 
-          ? "La descripción del hallazgo es requerida" 
-          : "La descripción de la solución es requerida")),
+        const SnackBar(content: Text("La descripción del hallazgo es requerida")),
       );
-      return false;
+      return;
     }
 
-    if (esEstadoAbierto && datos.nivelRiesgo.isEmpty) {
+    if (_nivelRiesgo.isEmpty || _nivelRiesgo == 'No aplica') {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("El nivel de riesgo es requerido")),
+        const SnackBar(content: Text("Selecciona un nivel de riesgo válido")),
       );
-      return false;
+      return;
     }
 
-    if (datos.foto == null && datos.firma == null) {
+    if (_fotoAbiertoUrl == null && _firmaAbierto == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Agregue al menos una foto o firma")),
+        const SnackBar(content: Text("Agrega al menos una foto o firma")),
       );
-      return false;
+      return;
     }
 
-    return true;
+    setState(() => _isLoading = true);
+
+    try {
+      // Convertir firma a base64 si existe
+      String? firmaBase64;
+      if (_firmaAbierto != null) {
+        firmaBase64 = CameraService.firmaToBase64(_firmaAbierto!);
+      }
+
+      final estadoAbiertoData = {
+        'descripcionHallazgo': _descripcionHallazgo.trim(),
+        'nivelRiesgo': _nivelRiesgo,
+        'recomendacionesControl': _recomendacionesControl?.trim(),
+        'fotoUrl': _fotoAbiertoUrl,
+        'firmaBase64': firmaBase64, // Guardar como base64
+        'ubicacion': _ubicacionAbierto != null
+            ? {
+                'latitude': _ubicacionAbierto!.latitude,
+                'longitude': _ubicacionAbierto!.longitude,
+              }
+            : null,
+        'guardado': true,
+        'fechaGuardado': FieldValue.serverTimestamp(),
+      };
+
+      await FirebaseService.updateEstadoAbierto(_casoId!, estadoAbiertoData);
+
+      setState(() {
+        _estadoAbiertoGuardado = true;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Estado abierto guardado exitosamente"),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error guardando estado abierto: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
-  void _guardarEstadoAbierto() {
-    if (!_validarDatos(_datosAbierto, true)) return;
+  // Guardar estado cerrado
+  Future<void> _guardarEstadoCerrado() async {
+    if (_casoId == null) return;
 
-    setState(() {
-      _casoAbiertoGuardado = true;
-      _datosAbierto = _datosAbierto.copyWith(guardado: true);
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Estado abierto guardado")),
-    );
-  }
-
-  void _guardarEstadoCerrado() {
-    if (!_validarDatos(_datosCerrado, false)) return;
-
-    final args = ModalRoute.of(context)!.settings.arguments as Map?;
-    final casoActual = args?["caso"] as Case?;
-
-    setState(() {
-      _casoCerradoGuardado = true;
-      _datosCerrado = _datosCerrado.copyWith(guardado: true);
-    });
-
-    if (casoActual != null) {
-      final caseProvider = Provider.of<CaseProvider>(context, listen: false);
-      caseProvider.marcarCasoComoCerrado(casoActual.id, DateTime.now());
+    // Validaciones
+    if (_descripcionSolucion.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("La descripción de la solución es requerida")),
+      );
+      return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Estado cerrado guardado")),
-    );
+    if (_fotoCerradoUrl == null && _firmaCerrado == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Agrega al menos una foto o firma")),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      // Convertir firma a base64 si existe
+      String? firmaBase64;
+      if (_firmaCerrado != null) {
+        firmaBase64 = CameraService.firmaToBase64(_firmaCerrado!);
+      }
+
+      final estadoCerradoData = {
+        'descripcionSolucion': _descripcionSolucion.trim(),
+        'fotoUrl': _fotoCerradoUrl,
+        'firmaBase64': firmaBase64, // Guardar como base64
+        'ubicacion': _ubicacionCerrado != null
+            ? {
+                'latitude': _ubicacionCerrado!.latitude,
+                'longitude': _ubicacionCerrado!.longitude,
+              }
+            : null,
+        'guardado': true,
+        'fechaGuardado': FieldValue.serverTimestamp(),
+      };
+
+      await FirebaseService.updateEstadoCerrado(_casoId!, estadoCerradoData);
+
+      setState(() {
+        _estadoCerradoGuardado = true;
+        _casoCerrado = true;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Caso cerrado exitosamente"),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error guardando estado cerrado: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final args = ModalRoute.of(context)!.settings.arguments as Map?;
-    final caso = args?["caso"] as Case?;
-    
-    final empresa = caso?.empresaNombre ?? "Sin empresa";
-    final nombre = caso?.nombre ?? "Caso sin descripción";
+    final empresaNombre = _casoData?['empresaNombre'] ?? "Sin empresa";
+    final nombre = _casoData?['nombre'] ?? "Caso sin descripción";
 
     return Scaffold(
       appBar: AppBar(
@@ -228,89 +420,84 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFFFF512F), Color(0xFFF09819)],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: Column(
-          children: [
-            // Header informativo
-            _buildHeader(empresa, nombre),
-            
-            // Contenido desplazable
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    // Estado Abierto
-                    CaseStateCard(
-                      titulo: "Estado Abierto",
-                      subtitulo: "Complete la información inicial del caso",
-                      data: _datosAbierto,
-                      esEstadoAbierto: true,
-                      bloqueado: _casoAbiertoGuardado,
-                      colorFondo: Colors.blue,
-                      onDescripcionChanged: (value) {
-                        setState(() {
-                          _datosAbierto = _datosAbierto.copyWith(descripcionHallazgo: value);
-                        });
-                      },
-                      onNivelRiesgoChanged: (value) {
-                        if (value != null) {
-                          setState(() {
-                            _datosAbierto = _datosAbierto.copyWith(nivelRiesgo: value);
-                          });
-                        }
-                      },
-                      onRecomendacionesChanged: (value) {
-                        setState(() {
-                          _datosAbierto = _datosAbierto.copyWith(recomendacionesControl: value);
-                        });
-                      },
-                      onTomarFoto: () => _tomarFoto(esEstadoAbierto: true),
-                      onCapturarFirma: () => _capturarFirma(esEstadoAbierto: true),
-                      onGuardar: _guardarEstadoAbierto,
-                      tomandoFoto: _tomandoFoto,
-                    ),
-
-                    // Botón para cerrar caso
-                    if (_casoAbiertoGuardado && !_casoCerrado) 
-                      _buildCerrarCasoButton(),
-
-                    // Estado Cerrado
-                    if (_casoCerrado)
-                      ClosedStateCard(
-                        titulo: "Estado Cerrado", 
-                        subtitulo: "Complete la información de cierre del caso",
-                        data: _datosCerrado,
-                        bloqueado: _casoCerradoGuardado,
-                        colorFondo: Colors.green,
-                        onDescripcionSolucionChanged: (value) {
-                          setState(() {
-                            _datosCerrado = _datosCerrado.copyWith(descripcionHallazgo: value);
-                          });
-                        },
-                        onTomarFoto: () => _tomarFoto(esEstadoAbierto: false),
-                        onCapturarFirma: () => _capturarFirma(esEstadoAbierto: false),
-                        onGuardar: _guardarEstadoCerrado,
-                        tomandoFoto: _tomandoFoto,
-                      ),
-
-                    // Botón generar reporte
-                    if (_casoAbiertoGuardado && _casoCerradoGuardado)
-                      _buildGenerarReporteButton(),
-                  ],
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFFFF512F), Color(0xFFF09819)],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
                 ),
               ),
+              child: Column(
+                children: [
+                  _buildHeader(empresaNombre, nombre),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        children: [
+                          // Estado Abierto
+                          CaseStateCardFirebase(
+                            titulo: "Estado Abierto",
+                            subtitulo: "Complete la información inicial del caso",
+                            descripcionHallazgo: _descripcionHallazgo,
+                            nivelRiesgo: _nivelRiesgo,
+                            recomendacionesControl: _recomendacionesControl,
+                            fotoPath: _fotoAbiertoPath,
+                            fotoUrl: _fotoAbiertoUrl,
+                            firma: _firmaAbierto,
+                            firmaUrl: null, // Ya no usamos firmaUrl
+                            bloqueado: _estadoAbiertoGuardado,
+                            onDescripcionChanged: (value) {
+                              setState(() => _descripcionHallazgo = value);
+                            },
+                            onNivelRiesgoChanged: (value) {
+                              if (value != null) {
+                                setState(() => _nivelRiesgo = value);
+                              }
+                            },
+                            onRecomendacionesChanged: (value) {
+                              setState(() => _recomendacionesControl = value);
+                            },
+                            onTomarFoto: () => _tomarFoto(esEstadoAbierto: true),
+                            onCapturarFirma: () => _capturarFirma(esEstadoAbierto: true),
+                            onGuardar: _guardarEstadoAbierto,
+                            tomandoFoto: _tomandoFoto,
+                          ),
+
+                          if (_estadoAbiertoGuardado && !_casoCerrado)
+                            _buildCerrarCasoButton(),
+
+                          if (_casoCerrado)
+                            ClosedStateCardFirebase(
+                              titulo: "Estado Cerrado",
+                              subtitulo: "Complete la información de cierre del caso",
+                              descripcionSolucion: _descripcionSolucion,
+                              fotoPath: _fotoCerradoPath,
+                              fotoUrl: _fotoCerradoUrl,
+                              firma: _firmaCerrado,
+                              firmaUrl: null, // Ya no usamos firmaUrl
+                              bloqueado: _estadoCerradoGuardado,
+                              onDescripcionSolucionChanged: (value) {
+                                setState(() => _descripcionSolucion = value);
+                              },
+                              onTomarFoto: () => _tomarFoto(esEstadoAbierto: false),
+                              onCapturarFirma: () => _capturarFirma(esEstadoAbierto: false),
+                              onGuardar: _guardarEstadoCerrado,
+                              tomandoFoto: _tomandoFoto,
+                            ),
+
+                          if (_estadoAbiertoGuardado && _estadoCerradoGuardado)
+                            _buildGenerarReporteButton(),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -371,22 +558,15 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
       margin: const EdgeInsets.symmetric(vertical: 16),
       child: ElevatedButton.icon(
         onPressed: () {
-          setState(() {
-            _casoCerrado = true;
-          });
+          setState(() => _casoCerrado = true);
         },
         icon: const Icon(Icons.lock),
-        label: const Text(
-          "Cerrar Caso",
-          style: TextStyle(fontSize: 16),
-        ),
+        label: const Text("Cerrar Caso", style: TextStyle(fontSize: 16)),
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.orange,
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),
     );
@@ -398,7 +578,7 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
       margin: const EdgeInsets.only(bottom: 20),
       child: ElevatedButton.icon(
         onPressed: () {
-          Navigator.pushNamed(context, '/report');
+          Navigator.pushNamed(context, '/report', arguments: {'casoId': _casoId});
         },
         icon: const Icon(Icons.file_present, size: 24),
         label: const Text(
@@ -409,9 +589,7 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
           backgroundColor: Colors.green,
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 18),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           elevation: 4,
         ),
       ),

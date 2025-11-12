@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "943671978858",
+    "project_id": "gestion-casos-5d432",
+    "storage_bucket": "gestion-casos-5d432.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:943671978858:android:0a0cd2331616cafcd89313",
+        "android_client_info": {
+          "package_name": "com.covaret.gestion_casos"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDXlnIS5xuMJUDuLAU2muZuSGOH4BoFMls"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

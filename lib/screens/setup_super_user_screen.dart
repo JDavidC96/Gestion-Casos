@@ -1,46 +1,58 @@
-// lib/screens/login_screen.dart
+// lib/screens/setup_super_user_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+class SetupSuperUserScreen extends StatefulWidget {
+  const SetupSuperUserScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  State<SetupSuperUserScreen> createState() => _SetupSuperUserScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _SetupSuperUserScreenState extends State<SetupSuperUserScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
   bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
 
   @override
   void dispose() {
+    _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
-  Future<void> _handleLogin() async {
+  Future<void> _createSuperUser() async {
     if (!_formKey.currentState!.validate()) return;
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     
-    final success = await authProvider.signIn(
+    final success = await authProvider.createSuperUser(
       _emailController.text.trim(),
       _passwordController.text,
+      _nameController.text.trim(),
     );
 
     if (!mounted) return;
 
     if (success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Super usuario creado exitosamente'),
+          backgroundColor: Colors.green,
+        ),
+      );
       Navigator.pushReplacementNamed(context, '/home');
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(authProvider.errorMessage ?? 'Error al iniciar sesión'),
+          content: Text(authProvider.errorMessage ?? 'Error al crear usuario'),
           backgroundColor: Colors.red,
         ),
       );
@@ -53,15 +65,15 @@ class _LoginScreenState extends State<LoginScreen> {
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFF43CEA2), Color(0xFF185A9D)],
+            colors: [Color(0xFF6A11CB), Color(0xFF2575FC)],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
         ),
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
+        child: SafeArea(
+          child: Center(
             child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24.0),
               child: Card(
                 elevation: 8,
                 shape: RoundedRectangleBorder(
@@ -76,22 +88,50 @@ class _LoginScreenState extends State<LoginScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         const Icon(
-                          Icons.account_circle,
-                          size: 100,
-                          color: Color(0xFF43CEA2),
+                          Icons.admin_panel_settings,
+                          size: 80,
+                          color: Color(0xFF6A11CB),
                         ),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 16),
                         const Text(
-                          "Gestión de Casos",
+                          "Configuración Inicial",
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        const SizedBox(height: 40),
-
-                        // Campo de correo/usuario
+                        const SizedBox(height: 8),
+                        const Text(
+                          "Crea el usuario administrador principal",
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey,
+                          ),
+                        ),
+                        const SizedBox(height: 32),
+                        
+                        // Nombre
+                        TextFormField(
+                          controller: _nameController,
+                          decoration: InputDecoration(
+                            labelText: "Nombre completo",
+                            prefixIcon: const Icon(Icons.person),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Ingresa tu nombre';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        
+                        // Email
                         TextFormField(
                           controller: _emailController,
                           keyboardType: TextInputType.emailAddress,
@@ -112,9 +152,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             return null;
                           },
                         ),
-                        const SizedBox(height: 20),
-
-                        // Campo de contraseña
+                        const SizedBox(height: 16),
+                        
+                        // Contraseña
                         TextFormField(
                           controller: _passwordController,
                           obscureText: _obscurePassword,
@@ -137,45 +177,59 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           validator: (value) {
                             if (value == null || value.isEmpty) {
-                              return 'Ingresa tu contraseña';
+                              return 'Ingresa una contraseña';
+                            }
+                            if (value.length < 6) {
+                              return 'La contraseña debe tener al menos 6 caracteres';
                             }
                             return null;
                           },
                         ),
-                        const SizedBox(height: 10),
-
-                        // Botón de "Olvidaste tu contraseña"
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            onPressed: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text("Funcionalidad no implementada"),
-                                ),
-                              );
-                            },
-                            child: const Text(
-                              "¿Olvidaste tu contraseña?",
-                              style: TextStyle(color: Color(0xFF185A9D)),
+                        const SizedBox(height: 16),
+                        
+                        // Confirmar contraseña
+                        TextFormField(
+                          controller: _confirmPasswordController,
+                          obscureText: _obscureConfirmPassword,
+                          decoration: InputDecoration(
+                            labelText: "Confirmar contraseña",
+                            prefixIcon: const Icon(Icons.lock_outline),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                _obscureConfirmPassword ? Icons.visibility : Icons.visibility_off,
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  _obscureConfirmPassword = !_obscureConfirmPassword;
+                                });
+                              },
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
                             ),
                           ),
+                          validator: (value) {
+                            if (value != _passwordController.text) {
+                              return 'Las contraseñas no coinciden';
+                            }
+                            return null;
+                          },
                         ),
-                        const SizedBox(height: 20),
-
-                        // Botón de login
+                        const SizedBox(height: 24),
+                        
+                        // Botón crear
                         Consumer<AuthProvider>(
                           builder: (context, authProvider, _) {
                             return ElevatedButton(
+                              onPressed: authProvider.isLoading ? null : _createSuperUser,
                               style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                backgroundColor: const Color(0xFF43CEA2),
+                                backgroundColor: const Color(0xFF6A11CB),
                                 foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 16),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                               ),
-                              onPressed: authProvider.isLoading ? null : _handleLogin,
                               child: authProvider.isLoading
                                   ? const SizedBox(
                                       height: 20,
@@ -186,7 +240,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                       ),
                                     )
                                   : const Text(
-                                      "Ingresar",
+                                      "Crear Super Usuario",
                                       style: TextStyle(
                                         fontSize: 18,
                                         fontWeight: FontWeight.bold,
