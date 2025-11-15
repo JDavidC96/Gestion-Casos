@@ -2,24 +2,25 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import '../widgets/risk_level_selector.dart';
+import 'risk_level_selector.dart';
 
 class CaseStateCardFirebase extends StatelessWidget {
   final String titulo;
   final String subtitulo;
   final String descripcionHallazgo;
-  final String nivelRiesgo;
+  final String nivelPeligro;
   final String? recomendacionesControl;
   final String? fotoPath;
   final String? fotoUrl;
   final Uint8List? firma;
-  final String? firmaUrl; // Ya no se usa, pero lo dejamos por compatibilidad
+  final String? firmaUrl;
+  final String? usuarioNombre;
   final bool bloqueado;
   final ValueChanged<String> onDescripcionChanged;
-  final ValueChanged<String?> onNivelRiesgoChanged;
+  final ValueChanged<String?> onnivelPeligroChanged;
   final ValueChanged<String>? onRecomendacionesChanged;
   final VoidCallback onTomarFoto;
-  final VoidCallback onCapturarFirma;
+  final VoidCallback? onCapturarFirma;
   final VoidCallback onGuardar;
   final bool tomandoFoto;
 
@@ -28,18 +29,19 @@ class CaseStateCardFirebase extends StatelessWidget {
     required this.titulo,
     required this.subtitulo,
     required this.descripcionHallazgo,
-    required this.nivelRiesgo,
+    required this.nivelPeligro,
     this.recomendacionesControl,
     this.fotoPath,
     this.fotoUrl,
     this.firma,
     this.firmaUrl,
+    this.usuarioNombre,
     required this.bloqueado,
     required this.onDescripcionChanged,
-    required this.onNivelRiesgoChanged,
+    required this.onnivelPeligroChanged,
     this.onRecomendacionesChanged,
     required this.onTomarFoto,
-    required this.onCapturarFirma,
+    this.onCapturarFirma,
     required this.onGuardar,
     required this.tomandoFoto,
   });
@@ -78,17 +80,22 @@ class CaseStateCardFirebase extends StatelessWidget {
               _buildDescripcionHallazgo(),
               const SizedBox(height: 16),
               RiskLevelSelector(
-                nivelSeleccionado: nivelRiesgo,
-                onChanged: bloqueado ? null : onNivelRiesgoChanged,
+                nivelSeleccionado: nivelPeligro,
+                onChanged: bloqueado ? null : onnivelPeligroChanged,
                 enabled: !bloqueado,
               ),
               const SizedBox(height: 16),
               if (!bloqueado) _buildRecomendacionesControl(),
               if (!bloqueado) const SizedBox(height: 16),
+              
+              // Mostrar información de firma automática
+              if (firma != null && usuarioNombre != null) 
+                _buildFirmaAutomaticaInfo(),
+              
               if (!bloqueado) _buildActionButtons(),
               if (!bloqueado) const SizedBox(height: 16),
               if (fotoPath != null || fotoUrl != null) _buildFotoPreview(),
-              if (firma != null || firmaUrl != null) _buildFirmaPreview(),
+              if (firma != null) _buildFirmaPreview(),
             ],
           ),
         ),
@@ -99,7 +106,7 @@ class CaseStateCardFirebase extends StatelessWidget {
   Widget _buildHeader() {
     return Row(
       children: [
-        Icon(Icons.lock_open, color: Colors.blue, size: 28),
+        const Icon(Icons.lock_open, color: Colors.blue, size: 28),
         const SizedBox(width: 12),
         Expanded(
           child: Column(
@@ -147,6 +154,47 @@ class CaseStateCardFirebase extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+
+  Widget _buildFirmaAutomaticaInfo() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.green[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.green[100]!),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.verified_user, color: Colors.green[700], size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Firma automática",
+                  style: TextStyle(
+                    color: Colors.green[700],
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                Text(
+                  "Responsable: $usuarioNombre",
+                  style: TextStyle(
+                    color: Colors.green[600],
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -228,15 +276,16 @@ class CaseStateCardFirebase extends StatelessWidget {
             foregroundColor: Colors.white,
           ),
         ),
-        ElevatedButton.icon(
-          onPressed: onCapturarFirma,
-          icon: const Icon(Icons.edit),
-          label: const Text("Firma"),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.blue.withOpacity(0.8),
-            foregroundColor: Colors.white,
+        if (onCapturarFirma != null)
+          ElevatedButton.icon(
+            onPressed: onCapturarFirma,
+            icon: const Icon(Icons.edit),
+            label: const Text("Firma"),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue.withOpacity(0.8),
+              foregroundColor: Colors.white,
+            ),
           ),
-        ),
         ElevatedButton.icon(
           onPressed: onGuardar,
           icon: const Icon(Icons.save),
@@ -285,7 +334,6 @@ class CaseStateCardFirebase extends StatelessWidget {
   }
 
   Widget _buildImageWidget() {
-    // Prioridad 1: Mostrar desde archivo local si existe
     if (fotoPath != null && File(fotoPath!).existsSync()) {
       return Image.file(
         File(fotoPath!),
@@ -295,7 +343,6 @@ class CaseStateCardFirebase extends StatelessWidget {
       );
     }
     
-    // Prioridad 2: Mostrar desde URL de Google Drive
     if (fotoUrl != null && fotoUrl!.isNotEmpty) {
       return Image.network(
         fotoUrl!,
@@ -319,7 +366,6 @@ class CaseStateCardFirebase extends StatelessWidget {
           );
         },
         errorBuilder: (context, error, stackTrace) {
-          print('Error cargando imagen: $error');
           return Container(
             width: double.infinity,
             height: 200,
@@ -333,14 +379,6 @@ class CaseStateCardFirebase extends StatelessWidget {
                   'Error al cargar imagen',
                   style: TextStyle(color: Colors.grey[600]),
                 ),
-                const SizedBox(height: 4),
-                TextButton(
-                  onPressed: () {
-                    // Intentar abrir en navegador
-                    print('URL de la foto: $fotoUrl');
-                  },
-                  child: const Text('Ver detalles'),
-                ),
               ],
             ),
           );
@@ -348,7 +386,6 @@ class CaseStateCardFirebase extends StatelessWidget {
       );
     }
     
-    // No hay foto
     return Container(
       height: 200,
       color: Colors.grey[300],
@@ -366,7 +403,6 @@ class CaseStateCardFirebase extends StatelessWidget {
   }
 
   Widget _buildFirmaPreview() {
-    // Solo mostrar si hay firma en bytes
     if (firma == null) return const SizedBox.shrink();
     
     return Column(
@@ -390,12 +426,36 @@ class CaseStateCardFirebase extends StatelessWidget {
             borderRadius: BorderRadius.circular(8),
             color: Colors.white,
           ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: Image.memory(
-              firma!,
-              fit: BoxFit.contain,
-            ),
+          child: Stack(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.memory(
+                  firma!,
+                  fit: BoxFit.contain,
+                ),
+              ),
+              if (usuarioNombre != null)
+                Positioned(
+                  bottom: 4,
+                  left: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.7),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      usuarioNombre!,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       ],

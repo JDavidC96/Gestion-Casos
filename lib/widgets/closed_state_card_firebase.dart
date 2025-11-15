@@ -12,6 +12,7 @@ class ClosedStateCardFirebase extends StatelessWidget {
   final String? fotoUrl;
   final Uint8List? firma;
   final String? firmaUrl;
+  final String? usuarioNombre;
   final bool bloqueado;
   final ValueChanged<String> onDescripcionSolucionChanged;
   final VoidCallback onTomarFoto;
@@ -28,6 +29,7 @@ class ClosedStateCardFirebase extends StatelessWidget {
     this.fotoUrl,
     this.firma,
     this.firmaUrl,
+    this.usuarioNombre,
     required this.bloqueado,
     required this.onDescripcionSolucionChanged,
     required this.onTomarFoto,

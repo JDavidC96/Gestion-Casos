@@ -5,8 +5,11 @@ import 'package:firebase_core/firebase_core.dart';
 import './providers/auth_provider.dart';
 import './providers/case_provider.dart';
 import './providers/centro_trabajo_provider.dart';
+import './providers/interface_config_provider.dart';
 import './screens/splash_screen.dart';
 import './screens/login_screen.dart';
+import './screens/super_admin_screen.dart';
+import './screens/admin_screen.dart';
 import './screens/setup_super_user_screen.dart';
 import './screens/home_screen.dart';
 import './screens/centros_trabajo_screen.dart';
@@ -14,6 +17,7 @@ import './screens/case_list_screen.dart';
 import './screens/case_detail_screen.dart';
 import './screens/report_screen.dart';
 import './screens/closed_cases_screen.dart';
+import './screens/interface_config_screen.dart';
 import 'firebase_options.dart';
 
 void main() async {
@@ -36,6 +40,7 @@ class GestionCasosApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => CaseProvider()),
         ChangeNotifierProvider(create: (_) => CentroTrabajoProvider()),
+        ChangeNotifierProvider(create: (_) => InterfaceConfigProvider()),
       ],
       child: MaterialApp(
         title: 'Gestión de Casos',
@@ -47,7 +52,11 @@ class GestionCasosApp extends StatelessWidget {
         routes: {
           '/splash': (_) => const SplashScreen(),
           '/setup': (_) => const SetupSuperUserScreen(),
+          '/interface_config': (_) => const InterfaceConfigScreen(),
           '/login': (_) => const LoginScreen(),
+          '/superAdmin': (_) => const SuperAdminScreen(),
+          '/admin': (_) => const AdminScreen(),
+
           '/home': (_) => const HomeScreen(),
           '/centros': (_) => const CentrosTrabajoScreen(),
           '/cases': (_) => const CaseListScreen(),

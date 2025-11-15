@@ -4,7 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import 'dart:io';
 class CaseDetailData {
   final String descripcionHallazgo;
-  final String nivelRiesgo;
+  final String nivelPeligro;
   final String? recomendacionesControl;
   final File? foto;
   final Uint8List? firma;
@@ -14,7 +14,7 @@ class CaseDetailData {
 
   CaseDetailData({
     required this.descripcionHallazgo,
-    required this.nivelRiesgo,
+    required this.nivelPeligro,
     this.recomendacionesControl,
     this.foto,
     this.firma,
@@ -25,7 +25,7 @@ class CaseDetailData {
 
   CaseDetailData copyWith({
     String? descripcionHallazgo,
-    String? nivelRiesgo,
+    String? nivelPeligro,
     String? recomendacionesControl,
     File? foto,
     Uint8List? firma,
@@ -34,7 +34,7 @@ class CaseDetailData {
   }) {
     return CaseDetailData(
       descripcionHallazgo: descripcionHallazgo ?? this.descripcionHallazgo,
-      nivelRiesgo: nivelRiesgo ?? this.nivelRiesgo,
+      nivelPeligro: nivelPeligro ?? this.nivelPeligro,
       recomendacionesControl: recomendacionesControl ?? this.recomendacionesControl,
       foto: foto ?? this.foto,
       firma: firma ?? this.firma,

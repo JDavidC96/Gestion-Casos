@@ -1,4 +1,4 @@
-// lib/providers/auth_provider.dart
+// lib/providers/auth_provider.dart 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/firebase_service.dart';
@@ -14,6 +14,26 @@ class AuthProvider with ChangeNotifier {
   String? get errorMessage => _errorMessage;
   Map<String, dynamic>? get userData => _userData;
   bool get isAuthenticated => _user != null;
+
+  // NUEVOS GETTERS PARA GRUPOS Y ROLES
+  String? get grupoId => _userData?['grupoId'];
+  String? get grupoNombre => _userData?['grupoNombre'];
+  bool get isSuperAdmin => _userData?['role'] == 'super_admin';
+  bool get isAdmin => _userData?['role'] == 'admin' || isSuperAdmin;
+  bool get isUser => _userData?['role'] == 'user';
+
+  // Verificar permisos de acceso a recursos
+  bool puedeAccederRecurso(String? recursoGrupoId) {
+    if (isSuperAdmin) return true; // Super admin ve todo
+    if (recursoGrupoId == null) return false; // Recursos sin grupo no son accesibles
+    return recursoGrupoId == grupoId; // Solo ve recursos de su grupo
+  }
+
+  // Verificar si puede editar un recurso
+  bool puedeEditarRecurso(String? recursoGrupoId) {
+    if (isSuperAdmin || isAdmin) return true;
+    return recursoGrupoId == grupoId && isAdmin;
+  }
 
   AuthProvider() {
     // Escuchar cambios de autenticación
@@ -80,10 +100,6 @@ class AuthProvider with ChangeNotifier {
     _user = null;
     _userData = null;
     notifyListeners();
-  }
-
-  Future<bool> isSuperAdmin() async {
-    return await FirebaseService.isSuperAdmin();
   }
 
   String _getErrorMessage(dynamic error) {

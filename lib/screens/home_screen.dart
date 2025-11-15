@@ -1,4 +1,4 @@
-// lib/screens/home_screen.dart
+// lib/screens/home_screen.dart - VERSIÓN COMPLETA ACTUALIZADA
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -20,17 +20,24 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   void _agregarEmpresa() {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    
     showDialog(
       context: context,
       builder: (context) => EmpresaFormDialogFirebase(
         onSave: (nuevaEmpresa) {
           setState(() {});
         },
+        // Pasar información del grupo automáticamente
+        grupoId: authProvider.grupoId,
+        grupoNombre: authProvider.grupoNombre,
       ),
     );
   }
 
   void _editarEmpresa(String empresaId, Empresa empresa) {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    
     showDialog(
       context: context,
       builder: (context) => EmpresaFormDialogFirebase(
@@ -39,11 +46,20 @@ class _HomeScreenState extends State<HomeScreen> {
         onSave: (empresaEditada) {
           setState(() {});
         },
+        grupoId: authProvider.grupoId,
+        grupoNombre: authProvider.grupoNombre,
       ),
     );
   }
 
   void _mostrarOpciones(String empresaId, Empresa empresa) {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    
+    // Verificar permisos antes de mostrar opciones
+    if (!authProvider.puedeEditarRecurso(empresaId)) {
+      return;
+    }
+    
     showModalBottomSheet(
       context: context,
       builder: (context) => EmpresaOptionsBottomSheet(
@@ -59,11 +75,25 @@ class _HomeScreenState extends State<HomeScreen> {
           Navigator.pop(context);
           await _confirmarEliminar(empresaId, empresa.nombre);
         },
+        puedeEditar: authProvider.puedeEditarRecurso(empresaId),
       ),
     );
   }
 
   Future<void> _confirmarEliminar(String empresaId, String nombreEmpresa) async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    
+    // Verificar permisos
+    if (!authProvider.puedeEditarRecurso(empresaId)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No tienes permisos para eliminar esta empresa'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     final confirmar = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -211,22 +241,59 @@ class _HomeScreenState extends State<HomeScreen> {
           if (authProvider.userData != null)
             Padding(
               padding: const EdgeInsets.only(right: 8.0),
-              child: Center(
-                child: Text(
-                  authProvider.userData!['displayName'] ?? '',
-                  style: const TextStyle(fontSize: 14),
-                ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    authProvider.userData!['displayName'] ?? '',
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                  if (authProvider.grupoNombre != null)
+                    Text(
+                      authProvider.grupoNombre!,
+                      style: const TextStyle(fontSize: 12, color: Colors.white70),
+                    ),
+                ],
               ),
             ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () async {
-              await authProvider.signOut();
-              if (mounted) {
-                Navigator.pushReplacementNamed(context, '/login');
-              }
-            },
-          ),
+          // Botón para administración si es super admin o admin
+          if (authProvider.isSuperAdmin || authProvider.isAdmin)
+            PopupMenuButton<String>(
+              onSelected: (value) {
+                if (value == 'admin') {
+                  if (authProvider.isSuperAdmin) {
+                    Navigator.pushNamed(context, '/superAdmin');
+                  } else {
+                    Navigator.pushNamed(context, '/admin');
+                  }
+                } else if (value == 'logout') {
+                  _cerrarSesion();
+                }
+              },
+              itemBuilder: (context) => [
+                if (authProvider.isSuperAdmin || authProvider.isAdmin)
+                  const PopupMenuItem(
+                    value: 'admin',
+                    child: Row(
+                      children: [
+                        Icon(Icons.admin_panel_settings),
+                        SizedBox(width: 8),
+                        Text('Administración'),
+                      ],
+                    ),
+                  ),
+                const PopupMenuItem(
+                  value: 'logout',
+                  child: Row(
+                    children: [
+                      Icon(Icons.logout),
+                      SizedBox(width: 8),
+                      Text('Cerrar Sesión'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
         ],
       ),
       body: Container(
@@ -238,11 +305,22 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         child: StreamBuilder<QuerySnapshot>(
-          stream: FirebaseService.getEmpresasStream(),
+          stream: FirebaseService.getEmpresasPorGrupoStream(authProvider.grupoId),
           builder: (context, snapshot) {
             if (snapshot.hasError) {
               return Center(
-                child: Text('Error: ${snapshot.error}'),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.error, size: 64, color: Colors.white),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Error: ${snapshot.error}',
+                      style: const TextStyle(color: Colors.white),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
               );
             }
 
@@ -270,16 +348,28 @@ class _HomeScreenState extends State<HomeScreen> {
                         color: Colors.white70,
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      onPressed: _agregarEmpresa,
-                      icon: const Icon(Icons.add),
-                      label: const Text('Agregar Primera Empresa'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
-                        foregroundColor: Colors.white,
+                    if (authProvider.isSuperAdmin || authProvider.isAdmin) ...[
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        onPressed: _agregarEmpresa,
+                        icon: const Icon(Icons.add),
+                        label: const Text('Agregar Primera Empresa'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange,
+                          foregroundColor: Colors.white,
+                        ),
                       ),
-                    ),
+                    ],
+                    if (!authProvider.isSuperAdmin && !authProvider.isAdmin)
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Contacta al administrador para agregar empresas',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.white60,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
                   ],
                 ),
               );
@@ -298,6 +388,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   final doc = snapshot.data!.docs[index];
                   final data = doc.data() as Map<String, dynamic>;
                   final empresaId = doc.id;
+
+                  // Verificar permisos de acceso
+                  if (!authProvider.puedeAccederRecurso(data['grupoId'])) {
+                    return const SizedBox.shrink(); // No mostrar si no tiene acceso
+                  }
 
                   final empresa = Empresa(
                     id: empresaId,
@@ -325,6 +420,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             casosAbiertos: casosAbiertos,
                             onTap: () => _navegarACentros(empresaId, empresa),
                             onLongPress: () => _mostrarOpciones(empresaId, empresa),
+                            puedeEditar: authProvider.puedeEditarRecurso(data['grupoId']),
                           );
                         },
                       );
@@ -336,12 +432,24 @@ class _HomeScreenState extends State<HomeScreen> {
           },
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _agregarEmpresa,
-        backgroundColor: Colors.orange,
-        foregroundColor: Colors.white,
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: 
+          // Solo mostrar FAB si tiene permisos
+          authProvider.isSuperAdmin || authProvider.isAdmin 
+            ? FloatingActionButton(
+                onPressed: _agregarEmpresa,
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
+                child: const Icon(Icons.add),
+              )
+            : null,
     );
+  }
+
+  Future<void> _cerrarSesion() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    await authProvider.signOut();
+    if (mounted) {
+      Navigator.pushReplacementNamed(context, '/login');
+    }
   }
 }

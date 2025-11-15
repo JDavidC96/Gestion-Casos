@@ -11,7 +11,7 @@ class CaseStateCard extends StatelessWidget {
   final bool bloqueado;
   final Color colorFondo;
   final ValueChanged<String> onDescripcionChanged;
-  final ValueChanged<String?> onNivelRiesgoChanged;
+  final ValueChanged<String?> onnivelPeligroChanged;
   final ValueChanged<String>? onRecomendacionesChanged;
   final VoidCallback onTomarFoto;
   final VoidCallback onCapturarFirma;
@@ -27,7 +27,7 @@ class CaseStateCard extends StatelessWidget {
     required this.bloqueado,
     required this.colorFondo,
     required this.onDescripcionChanged,
-    required this.onNivelRiesgoChanged,
+    required this.onnivelPeligroChanged,
     this.onRecomendacionesChanged,
     required this.onTomarFoto,
     required this.onCapturarFirma,
@@ -72,10 +72,10 @@ class CaseStateCard extends StatelessWidget {
               _buildDescripcionHallazgo(),
               const SizedBox(height: 16),
 
-              // Nivel de riesgo
+              // Nivel de peligro
               RiskLevelSelector(
-                nivelSeleccionado: data.nivelRiesgo,
-                onChanged: bloqueado ? _onNivelRiesgoDisabled : onNivelRiesgoChanged,
+                nivelSeleccionado: data.nivelPeligro,
+                onChanged: bloqueado ? _onnivelPeligroDisabled : onnivelPeligroChanged,
                 enabled: !bloqueado,
               ),
               const SizedBox(height: 16),
@@ -99,7 +99,7 @@ class CaseStateCard extends StatelessWidget {
   }
 
   // Función dummy para cuando el selector está deshabilitado
-  void _onNivelRiesgoDisabled(String? value) {
+  void _onnivelPeligroDisabled(String? value) {
     // No hacer nada cuando está bloqueado
   }
 

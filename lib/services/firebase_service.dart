@@ -91,15 +91,51 @@ class FirebaseService {
     return _firestore.collection('empresas').orderBy('nombre').snapshots();
   }
 
+  // NUEVO: Obtener empresas por grupo
+  static Stream<QuerySnapshot> getEmpresasPorGrupoStream(String? grupoId) {
+    if (grupoId == null) {
+      return _firestore.collection('empresas').orderBy('nombre').snapshots();
+    }
+    return _firestore
+        .collection('empresas')
+        .where('grupoId', isEqualTo: grupoId)
+        .orderBy('nombre')
+        .snapshots();
+  }
+
+  // NUEVO: Crear empresa con grupo
+  static Future<String> addEmpresaConGrupo(
+    String nombre, 
+    String nit, 
+    String iconName,
+    String? grupoId,
+    String? grupoNombre,
+  ) async {
+    final user = getCurrentUser();
+    final empresaData = {
+      'nombre': nombre,
+      'nit': nit,
+      'iconName': iconName,
+      'grupoId': grupoId,
+      'grupoNombre': grupoNombre,
+      'createdBy': user?.uid,
+      'createdAt': FieldValue.serverTimestamp(),
+    };
+    
+    final doc = await _firestore.collection('empresas').add(empresaData);
+    return doc.id;
+  }
+
   // ============= CENTROS DE TRABAJO =============
   
   static Future<String> createCentroTrabajo(Map<String, dynamic> centroData) async {
-    centroData['createdAt'] = FieldValue.serverTimestamp();
+    // SIN campos de fecha - solo datos simples
     final doc = await _firestore.collection('centros_trabajo').add(centroData);
     return doc.id;
   }
 
   static Future<void> updateCentroTrabajo(String centroId, Map<String, dynamic> data) async {
+    // SIN campos de fecha - solo datos simples
     await _firestore.collection('centros_trabajo').doc(centroId).update(data);
   }
 
@@ -111,6 +147,18 @@ class FirebaseService {
     return _firestore
         .collection('centros_trabajo')
         .where('empresaId', isEqualTo: empresaId)
+        .orderBy('nombre')
+        .snapshots();
+  }
+
+  // NUEVO: Obtener centros por grupo
+  static Stream<QuerySnapshot> getCentrosPorGrupoStream(String? grupoId) {
+    if (grupoId == null) {
+      return _firestore.collection('centros_trabajo').orderBy('nombre').snapshots();
+    }
+    return _firestore
+        .collection('centros_trabajo')
+        .where('grupoId', isEqualTo: grupoId)
         .orderBy('nombre')
         .snapshots();
   }
@@ -135,6 +183,18 @@ class FirebaseService {
     return _firestore
         .collection('casos')
         .where('empresaId', isEqualTo: empresaId)
+        .orderBy('fechaCreacion', descending: true)
+        .snapshots();
+  }
+
+  // NUEVO: Obtener casos por grupo
+  static Stream<QuerySnapshot> getCasosPorGrupoStream(String? grupoId) {
+    if (grupoId == null) {
+      return _firestore.collection('casos').orderBy('fechaCreacion', descending: true).snapshots();
+    }
+    return _firestore
+        .collection('casos')
+        .where('grupoId', isEqualTo: grupoId)
         .orderBy('fechaCreacion', descending: true)
         .snapshots();
   }

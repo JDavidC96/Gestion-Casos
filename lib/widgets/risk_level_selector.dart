@@ -20,7 +20,7 @@ class RiskLevelSelector extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          "Nivel de riesgo *",
+          "Nivel de peligro *",
           style: TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: 16,
@@ -70,7 +70,7 @@ class RiskLevelSelector extends StatelessWidget {
           onChanged: enabled ? onChanged : null,
           validator: (value) {
             if (value == null || value.isEmpty) {
-              return 'Por favor selecciona un nivel de riesgo';
+              return 'Por favor selecciona un Nivel de peligro';
             }
             return null;
           },

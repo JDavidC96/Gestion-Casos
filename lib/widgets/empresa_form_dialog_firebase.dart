@@ -1,19 +1,23 @@
-// lib/widgets/empresa_form_dialog_firebase.dart
+// lib/widgets/empresa_form_dialog_firebase.dart - VERSIÓN ACTUALIZADA
 import 'package:flutter/material.dart';
 import '../models/empresa_model.dart';
 import '../services/firebase_service.dart';
-import '../utils/icon_utils.dart'; // Añade este import
+import '../utils/icon_utils.dart';
 
 class EmpresaFormDialogFirebase extends StatefulWidget {
   final Empresa? empresa;
   final String? empresaId;
   final Function(Empresa) onSave;
+  final String? grupoId;
+  final String? grupoNombre;
 
   const EmpresaFormDialogFirebase({
     super.key,
     this.empresa,
     this.empresaId,
     required this.onSave,
+    this.grupoId,
+    this.grupoNombre,
   });
 
   @override
@@ -77,17 +81,25 @@ class _EmpresaFormDialogFirebaseState extends State<EmpresaFormDialogFirebase> {
       final empresaData = {
         'nombre': _nombreController.text.trim(),
         'nit': _nitController.text.trim(),
-        'iconName': _selectedOption["name"], // Guarda el nombre, no el codePoint
-        // Mantén 'icon' por compatibilidad durante la transición
+        'iconName': _selectedOption["name"],
         'icon': _selectedOption["icon"].codePoint,
+        // Agregar información del grupo
+        'grupoId': widget.grupoId,
+        'grupoNombre': widget.grupoNombre,
       };
 
       if (widget.empresaId != null) {
         // Actualizar empresa existente
         await FirebaseService.updateEmpresa(widget.empresaId!, empresaData);
       } else {
-        // Crear nueva empresa
-        await FirebaseService.createEmpresa(empresaData);
+        // Crear nueva empresa con información de grupo
+        await FirebaseService.addEmpresaConGrupo(
+          empresaData['nombre']!,
+          empresaData['nit']!,
+          empresaData['iconName']!,
+          widget.grupoId,
+          widget.grupoNombre,
+        );
       }
 
       final empresa = Empresa(
@@ -134,6 +146,47 @@ class _EmpresaFormDialogFirebaseState extends State<EmpresaFormDialogFirebase> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Información del grupo (solo lectura)
+            if (widget.grupoNombre != null)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue[100]!),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.group, color: Colors.blue[700], size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Grupo: ${widget.grupoNombre}',
+                            style: TextStyle(
+                              color: Colors.blue[700],
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                          if (widget.grupoId != null)
+                            Text(
+                              'ID: ${widget.grupoId}',
+                              style: TextStyle(
+                                color: Colors.blue[600],
+                                fontSize: 12,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             TextField(
               controller: _nombreController,
               decoration: const InputDecoration(

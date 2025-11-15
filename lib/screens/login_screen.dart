@@ -82,7 +82,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 20),
                         const Text(
-                          "Gestión de Casos",
+                          "SafeGestion",
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 24,

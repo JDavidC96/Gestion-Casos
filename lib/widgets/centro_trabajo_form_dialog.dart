@@ -60,6 +60,8 @@ class _CentroTrabajoFormDialogState extends State<CentroTrabajoFormDialog> {
         nombre: _nombreController.text.trim(),
         direccion: _direccionController.text.trim(),
         tipo: _tipoSeleccionado!,
+        grupoId: '', 
+        grupoNombre: '', 
       );
 
       final centroProvider = Provider.of<CentroTrabajoProvider>(context, listen: false);

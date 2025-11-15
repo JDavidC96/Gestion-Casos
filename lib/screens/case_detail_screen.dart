@@ -4,9 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:signature/signature.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:provider/provider.dart';
 import '../services/firebase_service.dart';
 import '../services/camera_service.dart';
-import '../services/geolocation_service.dart';
+import '../providers/auth_provider.dart';
 import '../widgets/case_state_card_firebase.dart';
 import '../widgets/closed_state_card_firebase.dart';
 
@@ -26,23 +27,32 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
 
   // Estado Abierto
   String _descripcionHallazgo = '';
-  String _nivelRiesgo = 'No aplica';
+  String _nivelPeligro = 'Medio'; // Valor por defecto actualizado
   String? _recomendacionesControl;
   String? _fotoAbiertoPath;
   String? _fotoAbiertoUrl;
   Uint8List? _firmaAbierto;
-  String? _firmaAbiertoUrl;  // Agregar esto
   Position? _ubicacionAbierto;
   bool _estadoAbiertoGuardado = false;
+  String? _responsableAbiertoNombre;
 
   // Estado Cerrado
   String _descripcionSolucion = '';
   String? _fotoCerradoPath;
   String? _fotoCerradoUrl;
   Uint8List? _firmaCerrado;
-  String? _firmaCerradoUrl;  // Agregar esto
   Position? _ubicacionCerrado;
   bool _estadoCerradoGuardado = false;
+  String? _responsableCerradoNombre;
+
+  // Información del usuario actual
+  String? _usuarioId;
+  String? _usuarioNombre;
+  Uint8List? _usuarioFirma;
+
+  // Configuración
+  bool _mostrarNivelPeligroEnDetalle = true;
+  Map<String, dynamic> _configInterfaz = {};
 
   final SignatureController _signatureController = SignatureController(
     penStrokeWidth: 3,
@@ -55,7 +65,33 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadCaseData();
+      _loadUserData();
+      _cargarConfiguracionGrupo();
     });
+  }
+
+  void _loadUserData() {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final userData = authProvider.userData;
+    
+    if (userData != null) {
+      setState(() {
+        _usuarioId = userData['uid'];
+        _usuarioNombre = userData['displayName'] ?? 'Usuario';
+        
+        // Cargar firma del usuario si existe
+        if (userData['firmaBase64'] != null) {
+          _usuarioFirma = CameraService.base64ToFirma(userData['firmaBase64']);
+          // Usar la firma del usuario automáticamente
+          _firmaAbierto = _usuarioFirma;
+          _firmaCerrado = _usuarioFirma;
+        }
+        
+        // Establecer como responsable actual
+        _responsableAbiertoNombre = _usuarioNombre;
+        _responsableCerradoNombre = _usuarioNombre;
+      });
+    }
   }
 
   void _loadCaseData() {
@@ -65,6 +101,31 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
       if (_casoId != null) {
         _loadFromFirestore();
       }
+    }
+  }
+
+  Future<void> _cargarConfiguracionGrupo() async {
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final grupoId = authProvider.grupoId;
+      
+      if (grupoId != null) {
+        final grupoDoc = await FirebaseFirestore.instance
+            .collection('grupos')
+            .doc(grupoId)
+            .get();
+        
+        if (grupoDoc.exists) {
+          final config = grupoDoc.data()?['configInterfaz'] ?? {};
+          setState(() {
+            _configInterfaz = config;
+            _mostrarNivelPeligroEnDetalle = config['mostrarNivelPeligroEnDetalle'] ?? true;
+            _nivelPeligro = config['nivelPeligroDefault'] ?? 'Medio';
+          });
+        }
+      }
+    } catch (e) {
+      print('Error cargando configuración: $e');
     }
   }
 
@@ -83,12 +144,13 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
           final estadoAbierto = data['estadoAbierto'] as Map<String, dynamic>?;
           if (estadoAbierto != null) {
             _descripcionHallazgo = estadoAbierto['descripcionHallazgo'] ?? '';
-            _nivelRiesgo = estadoAbierto['nivelRiesgo'] ?? 'No aplica';
+            _nivelPeligro = estadoAbierto['nivelPeligro'] ?? _nivelPeligro; // Usar valor cargado o por defecto
             _recomendacionesControl = estadoAbierto['recomendacionesControl'];
             _fotoAbiertoUrl = estadoAbierto['fotoUrl'];
             _estadoAbiertoGuardado = estadoAbierto['guardado'] ?? false;
+            _responsableAbiertoNombre = estadoAbierto['usuarioNombre'] ?? _usuarioNombre;
             
-            // Cargar firma desde base64
+            // Si ya hay firma guardada, usarla
             if (estadoAbierto['firmaBase64'] != null) {
               _firmaAbierto = CameraService.base64ToFirma(estadoAbierto['firmaBase64']);
             }
@@ -117,8 +179,9 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
             _descripcionSolucion = estadoCerrado['descripcionSolucion'] ?? '';
             _fotoCerradoUrl = estadoCerrado['fotoUrl'];
             _estadoCerradoGuardado = estadoCerrado['guardado'] ?? false;
+            _responsableCerradoNombre = estadoCerrado['usuarioNombre'] ?? _usuarioNombre;
             
-            // Cargar firma desde base64
+            // Si ya hay firma guardada, usarla
             if (estadoCerrado['firmaBase64'] != null) {
               _firmaCerrado = CameraService.base64ToFirma(estadoCerrado['firmaBase64']);
             }
@@ -176,10 +239,8 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
             _ubicacionCerrado = resultado['ubicacion'];
           }
         });
-
       }
     } catch (e) {
-      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error al tomar foto: $e')),
@@ -192,52 +253,10 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
     }
   }
 
-  // Capturar firma
-  void _capturarFirma({required bool esEstadoAbierto}) {
-    if ((esEstadoAbierto && _estadoAbiertoGuardado) || 
-        (!esEstadoAbierto && _estadoCerradoGuardado)) {
-      return;
-    }
-
-    _signatureController.clear();
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(esEstadoAbierto ? "Firma Inicial" : "Firma Final"),
-          content: SizedBox(
-            width: double.maxFinite,
-            height: 200,
-            child: Signature(
-              controller: _signatureController,
-              backgroundColor: Colors.grey[200]!,
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Cancelar"),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final data = await _signatureController.toPngBytes();
-                if (data != null && mounted) {
-                  setState(() {
-                    if (esEstadoAbierto) {
-                      _firmaAbierto = data;
-                    } else {
-                      _firmaCerrado = data;
-                    }
-                  });
-                }
-                Navigator.pop(context);
-              },
-              child: const Text("Guardar Firma"),
-            ),
-          ],
-        );
-      },
-    );
+  // Método vacío para capturar firma (ya no se usa pero es requerido)
+  void _capturarFirmaVacia() {
+    // Este método no hace nada porque la firma es automática
+    // Pero es necesario para cumplir con la interfaz requerida
   }
 
   // Guardar estado abierto
@@ -252,16 +271,17 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
       return;
     }
 
-    if (_nivelRiesgo.isEmpty || _nivelRiesgo == 'No aplica') {
+    // Solo validar nivel de peligro si está habilitado en la configuración
+    if (_mostrarNivelPeligroEnDetalle && (_nivelPeligro.isEmpty || _nivelPeligro == 'No aplica')) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Selecciona un nivel de riesgo válido")),
+        const SnackBar(content: Text("Selecciona un Nivel de peligro válido")),
       );
       return;
     }
 
-    if (_fotoAbiertoUrl == null && _firmaAbierto == null) {
+    if (_fotoAbiertoUrl == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Agrega al menos una foto o firma")),
+        const SnackBar(content: Text("Agrega una foto del hallazgo")),
       );
       return;
     }
@@ -269,18 +289,13 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // Convertir firma a base64 si existe
-      String? firmaBase64;
-      if (_firmaAbierto != null) {
-        firmaBase64 = CameraService.firmaToBase64(_firmaAbierto!);
-      }
-
       final estadoAbiertoData = {
         'descripcionHallazgo': _descripcionHallazgo.trim(),
-        'nivelRiesgo': _nivelRiesgo,
         'recomendacionesControl': _recomendacionesControl?.trim(),
         'fotoUrl': _fotoAbiertoUrl,
-        'firmaBase64': firmaBase64, // Guardar como base64
+        'firmaBase64': _usuarioFirma != null ? CameraService.firmaToBase64(_usuarioFirma!) : null,
+        'usuarioId': _usuarioId,
+        'usuarioNombre': _usuarioNombre,
         'ubicacion': _ubicacionAbierto != null
             ? {
                 'latitude': _ubicacionAbierto!.latitude,
@@ -291,10 +306,16 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
         'fechaGuardado': FieldValue.serverTimestamp(),
       };
 
+      // Solo agregar nivel de peligro si está habilitado en la configuración
+      if (_mostrarNivelPeligroEnDetalle) {
+        estadoAbiertoData['nivelPeligro'] = _nivelPeligro;
+      }
+
       await FirebaseService.updateEstadoAbierto(_casoId!, estadoAbiertoData);
 
       setState(() {
         _estadoAbiertoGuardado = true;
+        _responsableAbiertoNombre = _usuarioNombre;
       });
 
       if (mounted) {
@@ -334,9 +355,9 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
       return;
     }
 
-    if (_fotoCerradoUrl == null && _firmaCerrado == null) {
+    if (_fotoCerradoUrl == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Agrega al menos una foto o firma")),
+        const SnackBar(content: Text("Agrega una foto de la solución")),
       );
       return;
     }
@@ -344,16 +365,12 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // Convertir firma a base64 si existe
-      String? firmaBase64;
-      if (_firmaCerrado != null) {
-        firmaBase64 = CameraService.firmaToBase64(_firmaCerrado!);
-      }
-
       final estadoCerradoData = {
         'descripcionSolucion': _descripcionSolucion.trim(),
         'fotoUrl': _fotoCerradoUrl,
-        'firmaBase64': firmaBase64, // Guardar como base64
+        'firmaBase64': _usuarioFirma != null ? CameraService.firmaToBase64(_usuarioFirma!) : null,
+        'usuarioId': _usuarioId,
+        'usuarioNombre': _usuarioNombre,
         'ubicacion': _ubicacionCerrado != null
             ? {
                 'latitude': _ubicacionCerrado!.latitude,
@@ -369,6 +386,7 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
       setState(() {
         _estadoCerradoGuardado = true;
         _casoCerrado = true;
+        _responsableCerradoNombre = _usuarioNombre;
       });
 
       if (mounted) {
@@ -397,7 +415,6 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final args = ModalRoute.of(context)!.settings.arguments as Map?;
     final empresaNombre = _casoData?['empresaNombre'] ?? "Sin empresa";
     final nombre = _casoData?['nombre'] ?? "Caso sin descripción";
 
@@ -437,26 +454,27 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
                             titulo: "Estado Abierto",
                             subtitulo: "Complete la información inicial del caso",
                             descripcionHallazgo: _descripcionHallazgo,
-                            nivelRiesgo: _nivelRiesgo,
+                            nivelPeligro: _nivelPeligro,
                             recomendacionesControl: _recomendacionesControl,
                             fotoPath: _fotoAbiertoPath,
                             fotoUrl: _fotoAbiertoUrl,
                             firma: _firmaAbierto,
-                            firmaUrl: null, // Ya no usamos firmaUrl
+                            firmaUrl: null,
                             bloqueado: _estadoAbiertoGuardado,
+                            usuarioNombre: _responsableAbiertoNombre,
                             onDescripcionChanged: (value) {
                               setState(() => _descripcionHallazgo = value);
                             },
-                            onNivelRiesgoChanged: (value) {
+                            onnivelPeligroChanged: (value) {
                               if (value != null) {
-                                setState(() => _nivelRiesgo = value);
+                                setState(() => _nivelPeligro = value);
                               }
                             },
                             onRecomendacionesChanged: (value) {
                               setState(() => _recomendacionesControl = value);
                             },
                             onTomarFoto: () => _tomarFoto(esEstadoAbierto: true),
-                            onCapturarFirma: () => _capturarFirma(esEstadoAbierto: true),
+                            onCapturarFirma: _capturarFirmaVacia,
                             onGuardar: _guardarEstadoAbierto,
                             tomandoFoto: _tomandoFoto,
                           ),
@@ -472,13 +490,14 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
                               fotoPath: _fotoCerradoPath,
                               fotoUrl: _fotoCerradoUrl,
                               firma: _firmaCerrado,
-                              firmaUrl: null, // Ya no usamos firmaUrl
+                              firmaUrl: null,
                               bloqueado: _estadoCerradoGuardado,
+                              usuarioNombre: _responsableCerradoNombre,
                               onDescripcionSolucionChanged: (value) {
                                 setState(() => _descripcionSolucion = value);
                               },
                               onTomarFoto: () => _tomarFoto(esEstadoAbierto: false),
-                              onCapturarFirma: () => _capturarFirma(esEstadoAbierto: false),
+                              onCapturarFirma: _capturarFirmaVacia,
                               onGuardar: _guardarEstadoCerrado,
                               tomandoFoto: _tomandoFoto,
                             ),
@@ -541,6 +560,23 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
               ),
             ],
           ),
+          // Mostrar información del usuario actual
+          if (_usuarioNombre != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(Icons.person, color: Colors.white, size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  'Responsable actual: $_usuarioNombre',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.white70,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

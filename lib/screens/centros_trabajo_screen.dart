@@ -1,9 +1,11 @@
 // lib/screens/centros_trabajo_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
 import '../models/empresa_model.dart';
 import '../models/centro_trabajo_model.dart';
 import '../services/firebase_service.dart';
+import '../providers/auth_provider.dart';
 import '../widgets/centro_trabajo_form_dialog_firebase.dart';
 import '../widgets/empresa_info_dialog_centros_firebase.dart';
 import '../widgets/centro_trabajo_card.dart';
@@ -49,26 +51,71 @@ class _CentrosTrabajoScreenState extends State<CentrosTrabajoScreen> {
   }
 
   void _agregarCentroTrabajo() {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    
+    // Verificar permisos
+    if (!authProvider.puedeEditarRecurso(_empresaId)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No tienes permisos para agregar centros de trabajo'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     showDialog(
       context: context,
       builder: (context) => CentroTrabajoFormDialogFirebase(
         empresaId: _empresaId,
+        empresaNombre: _empresa.nombre,
+        grupoId: authProvider.grupoId,
+        grupoNombre: authProvider.grupoNombre,
       ),
     );
   }
 
   void _editarCentro(String centroId, CentroTrabajo centro) {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    
+    // Verificar permisos
+    if (!authProvider.puedeEditarRecurso(_empresaId)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No tienes permisos para editar centros de trabajo'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     showDialog(
       context: context,
       builder: (context) => CentroTrabajoFormDialogFirebase(
         empresaId: _empresaId,
+        empresaNombre: _empresa.nombre,
         centroId: centroId,
         centro: centro,
+        grupoId: authProvider.grupoId,
+        grupoNombre: authProvider.grupoNombre,
       ),
     );
   }
 
   Future<void> _eliminarCentro(String centroId, String nombreCentro) async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    
+    // Verificar permisos
+    if (!authProvider.puedeEditarRecurso(_empresaId)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No tienes permisos para eliminar centros de trabajo'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     final confirmar = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -131,31 +178,54 @@ class _CentrosTrabajoScreenState extends State<CentrosTrabajoScreen> {
         "empresaNombre": _empresa.nombre,
         "centroId": centroId,
         "centroNombre": centro.nombre,
+        "icon": _empresa.icon,
       },
     );
   }
 
   void _mostrarOpcionesCentro(String centroId, CentroTrabajo centro) {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final puedeEditar = authProvider.puedeEditarRecurso(_empresaId);
+
     showModalBottomSheet(
       context: context,
       builder: (context) => Wrap(
         children: [
           ListTile(
-            leading: const Icon(Icons.edit),
-            title: const Text('Editar'),
+            leading: const Icon(Icons.business),
+            title: const Text('Ver Casos'),
             onTap: () {
               Navigator.pop(context);
-              _editarCentro(centroId, centro);
+              _navegarACasos(centroId, centro);
             },
           ),
-          ListTile(
-            leading: const Icon(Icons.delete, color: Colors.red),
-            title: const Text('Eliminar'),
-            onTap: () {
-              Navigator.pop(context);
-              _eliminarCentro(centroId, centro.nombre);
-            },
-          ),
+          if (puedeEditar) ...[
+            ListTile(
+              leading: const Icon(Icons.edit),
+              title: const Text('Editar'),
+              onTap: () {
+                Navigator.pop(context);
+                _editarCentro(centroId, centro);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete, color: Colors.red),
+              title: const Text('Eliminar'),
+              onTap: () {
+                Navigator.pop(context);
+                _eliminarCentro(centroId, centro.nombre);
+              },
+            ),
+          ],
+          if (!puedeEditar)
+            ListTile(
+              leading: const Icon(Icons.lock, color: Colors.grey),
+              title: const Text(
+                'Sin permisos de edición',
+                style: TextStyle(color: Colors.grey),
+              ),
+              onTap: null,
+            ),
         ],
       ),
     );
@@ -163,10 +233,23 @@ class _CentrosTrabajoScreenState extends State<CentrosTrabajoScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final authProvider = Provider.of<AuthProvider>(context);
+
     return Scaffold(
       appBar: AppBar(
         title: Text('Centros - ${_empresa.nombre}'),
         actions: [
+          // Información de grupo en el appbar
+          if (authProvider.grupoNombre != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: Center(
+                child: Text(
+                  authProvider.grupoNombre!,
+                  style: const TextStyle(fontSize: 14, color: Colors.white70),
+                ),
+              ),
+            ),
           StreamBuilder<QuerySnapshot>(
             stream: FirebaseService.getCentrosPorEmpresaStream(_empresaId),
             builder: (context, snapshot) {
@@ -174,6 +257,7 @@ class _CentrosTrabajoScreenState extends State<CentrosTrabajoScreen> {
               return IconButton(
                 icon: const Icon(Icons.info_outline),
                 onPressed: () => _mostrarInfoEmpresa(cantidadCentros),
+                tooltip: 'Información de la empresa',
               );
             },
           ),
@@ -189,7 +273,16 @@ class _CentrosTrabajoScreenState extends State<CentrosTrabajoScreen> {
                 children: [
                   const Icon(Icons.error, size: 64, color: Colors.red),
                   const SizedBox(height: 16),
-                  Text('Error: ${snapshot.error}'),
+                  Text(
+                    'Error: ${snapshot.error}',
+                    style: const TextStyle(fontSize: 16),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Volver'),
+                  ),
                 ],
               ),
             );
@@ -205,42 +298,74 @@ class _CentrosTrabajoScreenState extends State<CentrosTrabajoScreen> {
             return EmptyCentrosState(
               empresaIcon: _empresa.icon,
               onAddCentro: _agregarCentroTrabajo,
+              puedeAgregar: authProvider.puedeEditarRecurso(_empresaId),
             );
           }
 
-          return _buildCentrosList(snapshot.data!.docs);
+          return _buildCentrosList(snapshot.data!.docs, authProvider);
         },
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _agregarCentroTrabajo,
-        backgroundColor: Colors.orange,
-        foregroundColor: Colors.white,
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: 
+          // Solo mostrar FAB si tiene permisos
+          authProvider.puedeEditarRecurso(_empresaId)
+            ? FloatingActionButton(
+                onPressed: _agregarCentroTrabajo,
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
+                child: const Icon(Icons.add),
+              )
+            : null,
     );
   }
 
-  Widget _buildCentrosList(List<QueryDocumentSnapshot> docs) {
+  Widget _buildCentrosList(List<QueryDocumentSnapshot> docs, AuthProvider authProvider) {
+    // Filtrar centros por grupo si es necesario
+    final centrosFiltrados = docs.where((doc) {
+      final data = doc.data() as Map<String, dynamic>;
+      return authProvider.puedeAccederRecurso(data['grupoId']);
+    }).toList();
+
+    if (centrosFiltrados.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.business_center, size: 80, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            const Text(
+              'No tienes acceso a los centros de esta empresa',
+              style: TextStyle(fontSize: 16, color: Colors.grey),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Contacta al administrador de tu grupo',
+              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+
     return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: docs.length,
+      itemCount: centrosFiltrados.length,
       itemBuilder: (context, index) {
-        final doc = docs[index];
+        final doc = centrosFiltrados[index];
         final data = doc.data() as Map<String, dynamic>;
         final centroId = doc.id;
 
-        final centro = CentroTrabajo(
-          id: centroId,
-          empresaId: data['empresaId'] ?? '',
-          nombre: data['nombre'] ?? '',
-          direccion: data['direccion'] ?? '',
-          tipo: data['tipo'] ?? '',
-        );
+        // ✅ CAMBIO CRÍTICO AQUÍ - Usar fromMap en lugar de constructor directo
+        final centro = CentroTrabajo.fromMap(centroId, data);
+
+        final puedeEditar = authProvider.puedeEditarRecurso(data['grupoId']);
 
         return CentroTrabajoCard(
           centro: centro,
           onTap: () => _navegarACasos(centroId, centro),
           onLongPress: () => _mostrarOpcionesCentro(centroId, centro),
+          puedeEditar: puedeEditar,
         );
       },
     );

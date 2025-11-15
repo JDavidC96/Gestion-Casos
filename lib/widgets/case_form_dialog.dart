@@ -1,10 +1,10 @@
-// widgets/case_form_dialog.dart
+// widgets/case_form_dialog.dart - VERSIÓN COMPATIBLE
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/case_model.dart';
 import '../models/empresa_model.dart';
 import '../providers/case_provider.dart';
-import '../data/risk_data.dart';
+import '../data/risk_data.dart'; // Cambiar import
 
 class CaseFormDialog extends StatefulWidget {
   final Empresa empresa;
@@ -21,6 +21,15 @@ class CaseFormDialog extends StatefulWidget {
 class _CaseFormDialogState extends State<CaseFormDialog> {
   String? _tipoPeligroSeleccionado;
   final TextEditingController _tipoPeligroController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    // Inicializar con la primera categoría
+    _tipoPeligroSeleccionado = RiskData.getCategorias().isNotEmpty 
+        ? RiskData.getCategorias()[0] 
+        : null;
+  }
 
   @override
   void dispose() {
@@ -41,7 +50,7 @@ class _CaseFormDialogState extends State<CaseFormDialog> {
         nombre: _tipoPeligroController.text.trim(),
         tipoRiesgo: _tipoPeligroSeleccionado!,
         descripcionRiesgo: _tipoPeligroController.text.trim(),
-        nivelRiesgo: "No aplica",
+        nivelPeligro: "No aplica",
         fechaCreacion: DateTime.now(),
       );
 
@@ -108,14 +117,17 @@ class _CaseFormDialogState extends State<CaseFormDialog> {
                   border: OutlineInputBorder(),
                   contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 ),
-                items: tiposDePeligro.map((item) {
+                items: RiskData.getCategorias().map((categoria) {
                   return DropdownMenuItem<String>(
-                    value: item["tipo"],
+                    value: categoria,
                     child: Row(
                       children: [
-                        Icon(item["icon"], color: Colors.blueGrey),
+                        Icon(
+                          RiskData.getIconPorCategoria(categoria),
+                          color: RiskData.getColorPorCategoria(categoria),
+                        ),
                         const SizedBox(width: 10),
-                        Text(item["tipo"]),
+                        Text(categoria),
                       ],
                     ),
                   );

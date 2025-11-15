@@ -3,13 +3,13 @@ import 'package:flutter/material.dart';
 class Empresa {
   final String id;
   final String nombre;
-  final String nit; // ← Nuevo campo
+  final String nit; 
   final IconData icon;
 
   Empresa({
     required this.id,
     required this.nombre,
-    required this.nit, // ← Nuevo parámetro
+    required this.nit, 
     required this.icon,
   });
 
@@ -17,7 +17,7 @@ class Empresa {
     return {
       'id': id,
       'nombre': nombre,
-      'nit': nit, // ← Incluir NIT
+      'nit': nit,
       'icon': icon.codePoint,
     };
   }
@@ -26,7 +26,7 @@ class Empresa {
     return Empresa(
       id: map['id'],
       nombre: map['nombre'],
-      nit: map['nit'], // ← Leer NIT
+      nit: map['nit'], 
       icon: IconData(map['icon'], fontFamily: 'MaterialIcons'),
     );
   }

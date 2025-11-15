@@ -5,23 +5,31 @@ import '../services/firebase_service.dart';
 
 class CentroTrabajoFormDialogFirebase extends StatefulWidget {
   final String empresaId;
+  final String empresaNombre;
   final String? centroId;
   final CentroTrabajo? centro;
+  final String? grupoId;
+  final String? grupoNombre;
 
   const CentroTrabajoFormDialogFirebase({
     super.key,
     required this.empresaId,
+    required this.empresaNombre,
     this.centroId,
     this.centro,
+    this.grupoId,
+    this.grupoNombre,
   });
 
   @override
-  State<CentroTrabajoFormDialogFirebase> createState() =>
-      _CentroTrabajoFormDialogFirebaseState();
+  State<CentroTrabajoFormDialogFirebase> createState() => _CentroTrabajoFormDialogFirebaseState();
 }
 
-class _CentroTrabajoFormDialogFirebaseState
-    extends State<CentroTrabajoFormDialogFirebase> {
+class _CentroTrabajoFormDialogFirebaseState extends State<CentroTrabajoFormDialogFirebase> {
+  final _formKey = GlobalKey<FormState>();
+  final _nombreController = TextEditingController();
+  final _direccionController = TextEditingController();
+  
   final List<String> _tiposCentro = [
     "Sede Principal",
     "Sucursal",
@@ -33,17 +41,19 @@ class _CentroTrabajoFormDialogFirebaseState
     "Otro"
   ];
 
-  late TextEditingController _nombreController;
-  late TextEditingController _direccionController;
   String? _tipoSeleccionado;
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _nombreController = TextEditingController(text: widget.centro?.nombre ?? '');
-    _direccionController = TextEditingController(text: widget.centro?.direccion ?? '');
-    _tipoSeleccionado = widget.centro?.tipo;
+    if (widget.centro != null) {
+      _nombreController.text = widget.centro!.nombre;
+      _direccionController.text = widget.centro!.direccion;
+      _tipoSeleccionado = widget.centro!.tipo;
+    } else {
+      _tipoSeleccionado = null;
+    }
   }
 
   @override
@@ -59,6 +69,7 @@ class _CentroTrabajoFormDialogFirebaseState
       _tipoSeleccionado != null;
 
   Future<void> _handleSave() async {
+    if (!_formKey.currentState!.validate()) return;
     if (!_isFormValid) return;
 
     setState(() => _isLoading = true);
@@ -69,13 +80,13 @@ class _CentroTrabajoFormDialogFirebaseState
         'nombre': _nombreController.text.trim(),
         'direccion': _direccionController.text.trim(),
         'tipo': _tipoSeleccionado!,
+        'grupoId': widget.grupoId ?? '',
+        'grupoNombre': widget.grupoNombre ?? '',
       };
 
       if (widget.centroId != null) {
-        // Actualizar centro existente
         await FirebaseService.updateCentroTrabajo(widget.centroId!, centroData);
       } else {
-        // Crear nuevo centro
         await FirebaseService.createCentroTrabajo(centroData);
       }
 
@@ -83,8 +94,8 @@ class _CentroTrabajoFormDialogFirebaseState
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(widget.centroId != null
-                ? 'Centro actualizado'
+            content: Text(widget.centroId != null 
+                ? 'Centro actualizado' 
                 : 'Centro creado'),
             backgroundColor: Colors.green,
           ),
@@ -109,52 +120,123 @@ class _CentroTrabajoFormDialogFirebaseState
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.centro == null
-          ? "Nuevo Centro de Trabajo"
-          : "Editar Centro"),
+      title: Text(widget.centro == null ? "Nuevo Centro" : "Editar Centro"),
       content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _nombreController,
-              decoration: const InputDecoration(
-                labelText: "Nombre del centro",
-                border: OutlineInputBorder(),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue[100]!),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.business, color: Colors.blue[700], size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Empresa: ${widget.empresaNombre}',
+                          style: TextStyle(
+                            color: Colors.blue[700],
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (widget.grupoNombre != null) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(Icons.group, color: Colors.blue[700], size: 16),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Grupo: ${widget.grupoNombre}',
+                            style: TextStyle(
+                              color: Colors.blue[600],
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
               ),
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _direccionController,
-              decoration: const InputDecoration(
-                labelText: "Dirección",
-                border: OutlineInputBorder(),
+              TextFormField(
+                controller: _nombreController,
+                decoration: const InputDecoration(
+                  labelText: "Nombre del centro",
+                  border: OutlineInputBorder(),
+                  hintText: "Ej: Sede Principal, Planta 1, etc.",
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Por favor ingresa el nombre del centro';
+                  }
+                  return null;
+                },
+                onChanged: (_) => setState(() {}),
               ),
-              maxLines: 2,
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              value: _tipoSeleccionado,
-              hint: const Text("Selecciona un tipo de centro"),
-              decoration: const InputDecoration(
-                labelText: "Tipo de centro",
-                border: OutlineInputBorder(),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _direccionController,
+                decoration: const InputDecoration(
+                  labelText: "Dirección",
+                  border: OutlineInputBorder(),
+                  hintText: "Dirección completa del centro",
+                ),
+                maxLines: 2,
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Por favor ingresa la dirección';
+                  }
+                  return null;
+                },
+                onChanged: (_) => setState(() {}),
               ),
-              items: _tiposCentro
-                  .map((tipo) => DropdownMenuItem(
-                        value: tipo,
-                        child: Text(tipo),
-                      ))
-                  .toList(),
-              onChanged: (value) {
-                setState(() {
-                  _tipoSeleccionado = value;
-                });
-              },
-            ),
-          ],
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: _tipoSeleccionado,
+                decoration: const InputDecoration(
+                  labelText: "Tipo de centro",
+                  border: OutlineInputBorder(),
+                ),
+                hint: const Text("Selecciona un tipo de centro"),
+                items: [
+                  const DropdownMenuItem<String>(
+                    value: null,
+                    child: Text("Selecciona un tipo"),
+                  ),
+                  ..._tiposCentro
+                      .map((tipo) => DropdownMenuItem(
+                            value: tipo,
+                            child: Text(tipo),
+                          ))
+                      .toList(),
+                ],
+                validator: (value) {
+                  if (value == null) {
+                    return 'Por favor selecciona un tipo de centro';
+                  }
+                  return null;
+                },
+                onChanged: (value) {
+                  setState(() {
+                    _tipoSeleccionado = value;
+                  });
+                },
+              ),
+            ],
+          ),
         ),
       ),
       actions: [

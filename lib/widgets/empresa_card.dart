@@ -1,4 +1,4 @@
-// widgets/empresa_card.dart
+// widgets/empresa_card.dart - VERSIÓN ACTUALIZADA
 import 'package:flutter/material.dart';
 import '../models/empresa_model.dart';
 
@@ -8,6 +8,7 @@ class EmpresaCard extends StatelessWidget {
   final int casosAbiertos;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
+  final bool puedeEditar;
 
   const EmpresaCard({
     super.key,
@@ -16,6 +17,7 @@ class EmpresaCard extends StatelessWidget {
     required this.casosAbiertos,
     required this.onTap,
     required this.onLongPress,
+    this.puedeEditar = true,
   });
 
   bool get _tieneCasosAbiertos => casosAbiertos > 0;
@@ -24,7 +26,7 @@ class EmpresaCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      onLongPress: onLongPress,
+      onLongPress: puedeEditar ? onLongPress : null,
       child: Card(
         color: _tieneCasosAbiertos ? Colors.orange[50] : Colors.white,
         shape: RoundedRectangleBorder(
@@ -39,6 +41,7 @@ class EmpresaCard extends StatelessWidget {
           children: [
             _buildCardContent(),
             _buildCaseCountBadge(),
+            if (!puedeEditar) _buildReadOnlyBadge(),
           ],
         ),
       ),
@@ -118,6 +121,28 @@ class EmpresaCard extends StatelessWidget {
           style: const TextStyle(
             color: Colors.white,
             fontSize: 12,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReadOnlyBadge() {
+    return Positioned(
+      left: 8,
+      top: 8,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.grey[300],
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Text(
+          'Solo lectura',
+          style: TextStyle(
+            color: Colors.grey,
+            fontSize: 10,
             fontWeight: FontWeight.bold,
           ),
         ),

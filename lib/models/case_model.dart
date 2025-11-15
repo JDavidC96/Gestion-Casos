@@ -4,11 +4,19 @@ class Case {
   final String empresaNombre;
   final String nombre;
   final String tipoRiesgo;
+  final String subgrupoRiesgo;
   final String descripcionRiesgo;
-  final String nivelRiesgo;
+  final String nivelPeligro;
   final DateTime fechaCreacion;
   DateTime? fechaCierre;
   bool cerrado;
+  final String? centroId;
+  final String? centroNombre;
+  final String? grupoId;
+  final String? grupoNombre;
+  final String? usuarioId;
+  final String? usuarioNombre;
+  final String? usuarioFirmaBase64;
 
   Case({
     required this.id,
@@ -16,11 +24,19 @@ class Case {
     required this.empresaNombre,
     required this.nombre,
     required this.tipoRiesgo,
+     this.subgrupoRiesgo = '',
     required this.descripcionRiesgo,
-    required this.nivelRiesgo,
+    required this.nivelPeligro,
     required this.fechaCreacion,
     this.fechaCierre,
     this.cerrado = false,
+    this.centroId,
+    this.centroNombre,
+    this.grupoId,
+    this.grupoNombre,
+    this.usuarioId,
+    this.usuarioNombre,
+    this.usuarioFirmaBase64,
   });
 
   Map<String, dynamic> toMap() {
@@ -44,7 +60,7 @@ class Case {
       nombre: map['nombre'],
       tipoRiesgo: map['tipoRiesgo'],
       descripcionRiesgo: map['descripcionRiesgo'],
-      nivelRiesgo: map['nivelRiesgo'],
+      nivelPeligro: map['nivelPeligro'],
       fechaCreacion: DateTime.parse(map['fechaCreacion']),
       cerrado: map['cerrado'],
     );
