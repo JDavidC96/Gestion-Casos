@@ -4,9 +4,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import '../services/user_service.dart';
 import '../providers/auth_provider.dart';
+import '../providers/empresas_provider.dart'; // Importar el nuevo provider
 import '../widgets/user_form_dialog.dart';
 import '../widgets/group_form_dialog.dart';
 import '../widgets/group_users_dialog.dart';
+import '../widgets/user_card.dart';
+import '../widgets/group_card.dart';
 
 class SuperAdminScreen extends StatefulWidget {
   const SuperAdminScreen({super.key});
@@ -17,44 +20,39 @@ class SuperAdminScreen extends StatefulWidget {
 
 class _SuperAdminScreenState extends State<SuperAdminScreen> {
   int _selectedIndex = 0;
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+  late EmpresasProvider _empresasProvider; // Añadir provider
 
   @override
-  Widget build(BuildContext context) {
+  void initState() {
+    super.initState();
+    _empresasProvider = EmpresasProvider(); // Inicializar provider
+  }
+
+  @override
+Widget build(BuildContext context) {
+  return MultiProvider(
+    providers: [
+      ChangeNotifierProvider(create: (_) => EmpresasProvider()),
+    ],
+    child: Scaffold(
+        key: _scaffoldKey,
+        appBar: _buildAppBar(context),
+        body: _buildBody(),
+        floatingActionButton: _buildFloatingActionButton(),
+        bottomNavigationBar: _buildBottomNavBar(),
+      ),
+    );
+  }
+
+  AppBar _buildAppBar(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Super Administrador"),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  authProvider.userData!['displayName'] ?? '',
-                  style: const TextStyle(fontSize: 14),
-                ),
-                if (authProvider.grupoNombre != null)
-                  Text(
-                    authProvider.grupoNombre!,
-                    style: const TextStyle(fontSize: 12, color: Colors.white70),
-                  ),
-              ],
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () async {
-              await authProvider.signOut();
-              if (mounted) {
-                Navigator.pushReplacementNamed(context, '/login');
-              }
-            },
-          ),
-        ],
-      ),
-      body: Container(
+    return AppBar(
+      title: const Text("Super Administrador"),
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      flexibleSpace: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             colors: [Color(0xFF6A11CB), Color(0xFF2575FC)],
@@ -62,56 +60,158 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
             end: Alignment.bottomRight,
           ),
         ),
-        child: Column(
-          children: [
-            _buildTabBar(),
-            Expanded(
-              child: _selectedIndex == 0 
-                  ? _buildUsersList()
-                  : _buildGroupsList(),
-            ),
-          ],
-        ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _selectedIndex == 0 ? _agregarUsuario : _agregarGrupo,
-        backgroundColor: Colors.orange,
-        foregroundColor: Colors.white,
-        child: const Icon(Icons.add),
+      actions: [
+        _buildUserInfo(authProvider),
+        _buildLogoutButton(context, authProvider),
+      ],
+    );
+  }
+
+  Widget _buildUserInfo(AuthProvider authProvider) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8.0),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            authProvider.userData!['displayName'] ?? '',
+            style: const TextStyle(fontSize: 14),
+          ),
+          if (authProvider.grupoNombre != null)
+            Text(
+              authProvider.grupoNombre!,
+              style: const TextStyle(fontSize: 12, color: Colors.white70),
+            ),
+        ],
       ),
     );
   }
 
-  Widget _buildTabBar() {
+  Widget _buildLogoutButton(BuildContext context, AuthProvider authProvider) {
+    return IconButton(
+      icon: const Icon(Icons.logout),
+      onPressed: () => _confirmarLogout(context, authProvider),
+      tooltip: 'Cerrar Sesión',
+    );
+  }
+
+  Widget _buildBody() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFF6A11CB), Color(0xFF2575FC)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: _selectedIndex == 0 ? _buildUsersTab() : _buildGroupsTab(),
+    );
+  }
+
+  Widget _buildUsersTab() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: UserService.getUsersStream(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _buildErrorState('Error cargando usuarios: ${snapshot.error}');
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator(color: Colors.white));
+        }
+
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return _buildEmptyUsersState();
+        }
+
+        return _buildUsersList(snapshot.data!.docs);
+      },
+    );
+  }
+
+  Widget _buildGroupsTab() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: UserService.getGruposStream(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _buildErrorState('Error cargando grupos: ${snapshot.error}');
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator(color: Colors.white));
+        }
+
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return _buildEmptyGroupsState();
+        }
+
+        return _buildGroupsList(snapshot.data!.docs);
+      },
+    );
+  }
+
+  Widget _buildUsersList(List<QueryDocumentSnapshot> users) {
     return Padding(
       padding: const EdgeInsets.all(16.0),
-      child: Row(
+      child: ListView.builder(
+        itemCount: users.length,
+        itemBuilder: (context, index) {
+          final doc = users[index];
+          final data = doc.data() as Map<String, dynamic>;
+          
+          return UserCard(
+            userData: data,
+            userId: doc.id,
+            onAction: (action, userData) => _handleUserAction(action, doc.id, userData),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildGroupsList(List<QueryDocumentSnapshot> groups) {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: ListView.builder(
+        itemCount: groups.length,
+        itemBuilder: (context, index) {
+          final doc = groups[index];
+          final data = doc.data() as Map<String, dynamic>;
+          
+          return GroupCard(
+            groupId: doc.id,
+            groupData: data,
+            onAction: _handleGroupAction,
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildErrorState(String error) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Expanded(
-            child: ElevatedButton(
-              onPressed: () => setState(() => _selectedIndex = 0),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _selectedIndex == 0 ? Colors.orange : Colors.grey,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: const Text('Usuarios'),
+          const Icon(Icons.error_outline, size: 64, color: Colors.white70),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32.0),
+            child: Text(
+              error,
+              style: const TextStyle(fontSize: 16, color: Colors.white70),
+              textAlign: TextAlign.center,
             ),
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: ElevatedButton(
-              onPressed: () => setState(() => _selectedIndex = 1),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _selectedIndex == 1 ? Colors.orange : Colors.grey,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: const Text('Grupos'),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: () => setState(() {}),
+            icon: const Icon(Icons.refresh),
+            label: const Text('Reintentar'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
             ),
           ),
         ],
@@ -119,213 +219,77 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
     );
   }
 
-  Widget _buildUsersList() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: UserService.getUsersStream(),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
-        }
-
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: Colors.white));
-        }
-
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.people, size: 80, color: Colors.white70),
-                const SizedBox(height: 16),
-                const Text(
-                  'No hay usuarios registrados',
-                  style: TextStyle(fontSize: 18, color: Colors.white70),
-                ),
-              ],
-            ),
-          );
-        }
-
-        return Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: ListView.builder(
-            itemCount: snapshot.data!.docs.length,
-            itemBuilder: (context, index) {
-              final doc = snapshot.data!.docs[index];
-              final data = doc.data() as Map<String, dynamic>;
-              
-              return Card(
-                margin: const EdgeInsets.only(bottom: 12),
-                child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: _getRoleColor(data['role']),
-                    child: Text(
-                      data['displayName']?.toString().substring(0, 1).toUpperCase() ?? 'U',
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                  ),
-                  title: Text(data['displayName'] ?? 'Sin nombre'),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(data['email'] ?? 'Sin email'),
-                      Text(
-                        'Rol: ${data['role']} • Cédula: ${data['cedula']}',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      if (data['grupoNombre'] != null)
-                        Text(
-                          'Grupo: ${data['grupoNombre']}',
-                          style: const TextStyle(fontSize: 12, color: Colors.blue),
-                        ),
-                    ],
-                  ),
-                  trailing: PopupMenuButton<String>(
-                    onSelected: (value) => _handleUserAction(value, doc.id, data),
-                    itemBuilder: (context) => [
-                      const PopupMenuItem(value: 'edit', child: Text('Editar')),
-                      const PopupMenuItem(value: 'delete', child: Text('Eliminar')),
-                    ],
-                  ),
-                ),
-              );
-            },
+  Widget _buildEmptyUsersState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.people_outline, size: 80, color: Colors.white70),
+          const SizedBox(height: 16),
+          const Text(
+            'No hay usuarios registrados',
+            style: TextStyle(fontSize: 18, color: Colors.white70),
           ),
-        );
-      },
+          const SizedBox(height: 8),
+          Text(
+            'Presiona el botón + para agregar el primer usuario',
+            style: TextStyle(fontSize: 14, color: Colors.white70.withOpacity(0.8)),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildGroupsList() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: UserService.getGruposStream(),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
-        }
-
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: Colors.white));
-        }
-
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.group, size: 80, color: Colors.white70),
-                const SizedBox(height: 16),
-                const Text(
-                  'No hay grupos registrados',
-                  style: TextStyle(fontSize: 18, color: Colors.white70),
-                ),
-              ],
-            ),
-          );
-        }
-
-        return Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: ListView.builder(
-            itemCount: snapshot.data!.docs.length,
-            itemBuilder: (context, index) {
-              final doc = snapshot.data!.docs[index];
-              final data = doc.data() as Map<String, dynamic>;
-              
-              return _buildGroupCard(doc.id, data);
-            },
+  Widget _buildEmptyGroupsState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.group_outlined, size: 80, color: Colors.white70),
+          const SizedBox(height: 16),
+          const Text(
+            'No hay grupos registrados',
+            style: TextStyle(fontSize: 18, color: Colors.white70),
           ),
-        );
-      },
+          const SizedBox(height: 8),
+          Text(
+            'Presiona el botón + para agregar el primer grupo',
+            style: TextStyle(fontSize: 14, color: Colors.white70.withOpacity(0.8)),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildGroupCard(String groupId, Map<String, dynamic> groupData) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const CircleAvatar(
-                  backgroundColor: Colors.green,
-                  child: Icon(Icons.group, color: Colors.white),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        groupData['nombre'] ?? 'Sin nombre',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        groupData['descripcion'] ?? 'Sin descripción',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                PopupMenuButton<String>(
-                  onSelected: (value) => _handleGroupAction(value, groupId, groupData),
-                  itemBuilder: (context) => [
-                    const PopupMenuItem(value: 'users', child: Text('Gestionar Usuarios')),
-                    const PopupMenuItem(value: 'config', child: Text('Configurar Interfaz')),
-                    const PopupMenuItem(value: 'edit', child: Text('Editar Grupo')),
-                    const PopupMenuItem(value: 'delete', child: Text('Eliminar Grupo')),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            StreamBuilder<QuerySnapshot>(
-              stream: UserService.getUsersByGroupStream(groupId),
-              builder: (context, userSnapshot) {
-                final userCount = userSnapshot.hasData ? userSnapshot.data!.docs.length : 0;
-                final adminCount = userSnapshot.hasData 
-                  ? userSnapshot.data!.docs.where((doc) {
-                      final data = doc.data() as Map<String, dynamic>;
-                      return data['role'] == 'admin' || data['role'] == 'super_admin';
-                    }).length
-                  : 0;
-
-                return Row(
-                  children: [
-                    _buildCountChip('$userCount Usuarios', Icons.people),
-                    const SizedBox(width: 8),
-                    _buildCountChip('$adminCount Admins', Icons.admin_panel_settings),
-                    const SizedBox(width: 8),
-                    _buildCountChip('Activo', Icons.check_circle, color: Colors.green),
-                  ],
-                );
-              },
-            ),
-          ],
+  Widget _buildBottomNavBar() {
+    return BottomNavigationBar(
+      currentIndex: _selectedIndex,
+      onTap: (index) => setState(() => _selectedIndex = index),
+      items: const [
+        BottomNavigationBarItem(
+          icon: Icon(Icons.people),
+          label: 'Usuarios',
         ),
-      ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.group),
+          label: 'Grupos',
+        ),
+      ],
+      backgroundColor: Colors.white,
+      selectedItemColor: Colors.orange,
+      unselectedItemColor: Colors.grey,
     );
   }
 
-  Widget _buildCountChip(String text, IconData icon, {Color? color}) {
-    return Chip(
-      label: Text(
-        text,
-        style: const TextStyle(fontSize: 12),
-      ),
-      avatar: Icon(icon, size: 16, color: color),
-      backgroundColor: Colors.grey[100],
-      visualDensity: VisualDensity.compact,
+  Widget _buildFloatingActionButton() {
+    return FloatingActionButton(
+      onPressed: _selectedIndex == 0 ? _agregarUsuario : _agregarGrupo,
+      backgroundColor: Colors.orange,
+      foregroundColor: Colors.white,
+      child: const Icon(Icons.add),
+      tooltip: _selectedIndex == 0 ? 'Agregar Usuario' : 'Agregar Grupo',
     );
   }
 
@@ -334,7 +298,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
       context: context,
       builder: (context) => UserFormDialog(
         onSave: (userData) {
-          // El usuario se creará con los datos proporcionados
+          _mostrarSnackBar('Usuario creado exitosamente', Colors.green);
         },
         isSuperAdmin: true,
       ),
@@ -347,6 +311,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
       builder: (context) => GroupFormDialog(
         onSave: (groupData) {
           UserService.createGrupo(groupData['nombre'], groupData['descripcion']);
+          _mostrarSnackBar('Grupo creado exitosamente', Colors.green);
         },
       ),
     );
@@ -391,16 +356,16 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
   }
 
   void _configurarInterfaz(String groupId, Map<String, dynamic> groupData) {
-  // Navegar a pantalla de configuración de interfaz
-  Navigator.pushNamed(
-    context,
-    '/interface_config',
-    arguments: {
-      'groupId': groupId,
-      'groupData': groupData,
-    },
-  );
-}
+    // Navegar a pantalla de configuración de interfaz
+    Navigator.pushNamed(
+      context,
+      '/interface_config',
+      arguments: {
+        'groupId': groupId,
+        'groupData': groupData,
+      },
+    );
+  }
 
   void _editarUsuario(String userId, Map<String, dynamic> userData) {
     showDialog(
@@ -410,6 +375,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
         userId: userId,
         onSave: (updatedData) {
           UserService.updateUser(userId, updatedData);
+          _mostrarSnackBar('Usuario actualizado exitosamente', Colors.green);
         },
         isSuperAdmin: true,
       ),
@@ -424,13 +390,14 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
         groupData: groupData,
         onSave: (updatedData) {
           UserService.updateGrupo(groupId, updatedData);
+          _mostrarSnackBar('Grupo actualizado exitosamente', Colors.green);
         },
       ),
     );
   }
 
   Future<void> _confirmarEliminarUsuario(String userId, String displayName) async {
-    final confirmar = await showDialog<bool>(
+    final result = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Confirmar eliminación'),
@@ -449,32 +416,13 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
       ),
     );
 
-    if (confirmar == true) {
-      try {
-        await UserService.deleteUser(userId);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Usuario eliminado'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error al eliminar: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
+    if (result == true) {
+      await _eliminarUsuario(userId);
     }
   }
 
   Future<void> _confirmarEliminarGrupo(String groupId, String groupName) async {
-    final confirmar = await showDialog<bool>(
+    final result = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Confirmar eliminación'),
@@ -493,36 +441,64 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
       ),
     );
 
-    if (confirmar == true) {
-      try {
-        await UserService.deleteGrupo(groupId);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Grupo eliminado'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error al eliminar: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
+    if (result == true) {
+      await _eliminarGrupo(groupId);
+    }
+  }
+
+  Future<void> _eliminarUsuario(String userId) async {
+    try {
+      await UserService.deleteUser(userId);
+      _mostrarSnackBar('Usuario eliminado exitosamente', Colors.green);
+    } catch (e) {
+      _mostrarSnackBar('Error al eliminar usuario: $e', Colors.red);
+    }
+  }
+
+  Future<void> _eliminarGrupo(String groupId) async {
+    try {
+      await UserService.deleteGrupo(groupId);
+      _mostrarSnackBar('Grupo eliminado exitosamente', Colors.green);
+    } catch (e) {
+      _mostrarSnackBar('Error al eliminar grupo: $e', Colors.red);
+    }
+  }
+
+  Future<void> _confirmarLogout(BuildContext context, AuthProvider authProvider) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Cerrar Sesión'),
+        content: const Text('¿Estás seguro de que deseas cerrar sesión?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+            child: const Text('Cerrar Sesión'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true) {
+      await authProvider.signOut();
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/login');
       }
     }
   }
 
-  Color _getRoleColor(String role) {
-    switch (role) {
-      case 'super_admin': return Colors.red;
-      case 'admin': return Colors.orange;
-      case 'user': return Colors.blue;
-      default: return Colors.grey;
-    }
+  void _mostrarSnackBar(String mensaje, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(mensaje),
+        backgroundColor: color,
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 }

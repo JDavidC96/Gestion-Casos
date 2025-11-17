@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_model.dart';
 
+
 class UserService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -18,6 +19,7 @@ class UserService {
     String? grupoId,
     String? grupoNombre,
     Map<String, dynamic>? configInterfaz,
+    List<String>? empresasAsignadas,
   }) async {
     try {
       // Crear usuario en Authentication
@@ -43,6 +45,7 @@ class UserService {
         grupoNombre: grupoNombre,
         createdAt: DateTime.now(),
         configInterfaz: configInterfaz,
+        empresasAsignadas: empresasAsignadas,
       );
 
       await _firestore
@@ -187,5 +190,66 @@ class UserService {
       print('❌ Error obteniendo logo del grupo: $e');
       return null;
     }
+  }
+
+  // ========== NUEVOS MÉTODOS PARA ASIGNACIÓN DE EMPRESAS ==========
+
+  /// Asignar empresas a un usuario
+  static Future<void> assignEmpresasToUser(String userId, List<String> empresaIds) async {
+    try {
+      await _firestore.collection('users').doc(userId).update({
+        'empresasAsignadas': empresaIds,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      print('✅ Empresas asignadas al usuario: $userId - $empresaIds');
+    } catch (e) {
+      print('❌ Error asignando empresas al usuario: $e');
+      rethrow;
+    }
+  }
+
+  /// Obtener empresas asignadas de un usuario
+  static Future<List<String>> getEmpresasAsignadas(String userId) async {
+    try {
+      final doc = await _firestore.collection('users').doc(userId).get();
+      final empresas = doc.data()?['empresasAsignadas'] as List<dynamic>?;
+      return empresas?.cast<String>() ?? [];
+    } catch (e) {
+      print('❌ Error obteniendo empresas asignadas: $e');
+      return [];
+    }
+  }
+
+  /// Obtener inspectores asignados a una empresa
+  static Future<List<String>> getInspectoresByEmpresa(String empresaId) async {
+    try {
+      final snapshot = await _firestore
+          .collection('users')
+          .where('empresasAsignadas', arrayContains: empresaId)
+          .where('role', whereIn: ['inspector', 'superinspector'])
+          .get();
+      
+      return snapshot.docs.map((doc) => doc.id).toList();
+    } catch (e) {
+      print('❌ Error obteniendo inspectores por empresa: $e');
+      return [];
+    }
+  }
+
+  /// Obtener usuarios por rol específico
+  static Stream<QuerySnapshot> getUsersByRoleStream(String role) {
+    return _firestore
+        .collection('users')
+        .where('role', isEqualTo: role)
+        .snapshots();
+  }
+
+  /// Obtener inspectores del grupo (inspector y superinspector)
+  static Stream<QuerySnapshot> getInspectoresByGroupStream(String grupoId) {
+    return _firestore
+        .collection('users')
+        .where('grupoId', isEqualTo: grupoId)
+        .where('role', whereIn: ['inspector', 'superinspector'])
+        .snapshots();
   }
 }

@@ -79,7 +79,7 @@ class _GroupUsersDialogState extends State<GroupUsersDialog> {
                             leading: CircleAvatar(
                               backgroundColor: _getRoleColor(data['role']),
                               child: Text(
-                                data['displayName']?.toString().substring(0, 1).toUpperCase() ?? 'U',
+                                data['displayName']?.toString().substring(0, 1).toUpperCase() ?? 'I',
                                 style: const TextStyle(color: Colors.white),
                               ),
                             ),
@@ -89,7 +89,7 @@ class _GroupUsersDialogState extends State<GroupUsersDialog> {
                               children: [
                                 Text(data['email'] ?? 'Sin email'),
                                 Text(
-                                  'Rol: ${data['role']} • Cédula: ${data['cedula']}',
+                                  'Rol: ${_getRoleName(data['role'])} • Cédula: ${data['cedula']}',
                                   style: const TextStyle(fontSize: 12),
                                 ),
                               ],
@@ -146,8 +146,19 @@ class _GroupUsersDialogState extends State<GroupUsersDialog> {
     switch (role) {
       case 'super_admin': return Colors.red;
       case 'admin': return Colors.orange;
-      case 'user': return Colors.blue;
+      case 'superinspector': return Colors.purple;
+      case 'inspector': return Colors.blue;
       default: return Colors.grey;
+    }
+  }
+
+  String _getRoleName(String role) {
+    switch (role) {
+      case 'super_admin': return 'Super Admin';
+      case 'admin': return 'Administrador';
+      case 'superinspector': return 'Super Inspector';
+      case 'inspector': return 'Inspector';
+      default: return 'Desconocido';
     }
   }
 

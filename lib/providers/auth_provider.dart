@@ -15,24 +15,71 @@ class AuthProvider with ChangeNotifier {
   Map<String, dynamic>? get userData => _userData;
   bool get isAuthenticated => _user != null;
 
-  // NUEVOS GETTERS PARA GRUPOS Y ROLES
+  // NUEVOS GETTERS PARA GRUPOS Y ROLES ACTUALIZADOS
   String? get grupoId => _userData?['grupoId'];
   String? get grupoNombre => _userData?['grupoNombre'];
   bool get isSuperAdmin => _userData?['role'] == 'super_admin';
   bool get isAdmin => _userData?['role'] == 'admin' || isSuperAdmin;
-  bool get isUser => _userData?['role'] == 'user';
+  bool get isSuperInspector => _userData?['role'] == 'superinspector';
+  bool get isInspector => _userData?['role'] == 'inspector' || isSuperInspector;
+  
+  // Método para verificar si es cualquier tipo de inspector
+  bool get isAnyInspector => isInspector || isSuperInspector;
+  
+  // PERMISOS ESPECÍFICOS SEGÚN JERARQUÍA
+  bool get canManageGroups => isSuperAdmin;
+  bool get canManageAllUsers => isSuperAdmin;
+  bool get canManageGroupUsers => isAdmin || isSuperAdmin;
+  bool get canManageLogo => isAdmin || isSuperAdmin;
+  bool get canAssignInspectors => isAdmin || isSuperAdmin;
+  bool get canViewAllCompanies => isSuperInspector || isAdmin || isSuperAdmin;
+  bool get canViewAssignedCompanies => isInspector || isSuperInspector;
+  bool get canCreateCases => isAnyInspector;
+  bool get canCloseCases => isAnyInspector;
+  bool get canGenerateReports => isAnyInspector;
+  bool get canManageUsers => isAdmin || isSuperAdmin;
+
+  // NUEVO: Empresas asignadas para inspectores
+  List<String> get empresasAsignadas {
+    final empresas = _userData?['empresasAsignadas'] as List<dynamic>?;
+    return empresas?.cast<String>() ?? [];
+  }
 
   // Verificar permisos de acceso a recursos
   bool puedeAccederRecurso(String? recursoGrupoId) {
-    if (isSuperAdmin) return true; // Super admin ve todo
+    if (isSuperAdmin || isSuperInspector) return true; // Super roles ven todo
     if (recursoGrupoId == null) return false; // Recursos sin grupo no son accesibles
     return recursoGrupoId == grupoId; // Solo ve recursos de su grupo
   }
 
   // Verificar si puede editar un recurso
   bool puedeEditarRecurso(String? recursoGrupoId) {
-    if (isSuperAdmin || isAdmin) return true;
+    if (isSuperAdmin || isAdmin || isSuperInspector) return true;
     return recursoGrupoId == grupoId && isAdmin;
+  }
+
+  // NUEVO: Verificar acceso a empresa específica
+  bool puedeAccederAEmpresa(String empresaId) {
+    if (isSuperAdmin || isAdmin) return true; // Super admin y admin ven todas las empresas
+    
+    // Para inspectores, verificar si la empresa está en sus empresas asignadas
+    return empresasAsignadas.contains(empresaId);
+  }
+
+  // Verificar permisos para recursos específicos
+  bool puedeGestionarGrupo(String? grupoId) {
+    return isSuperAdmin || (isAdmin && this.grupoId == grupoId);
+  }
+
+  bool puedeGestionarUsuario(String? userGrupoId) {
+    return isSuperAdmin || (isAdmin && this.grupoId == userGrupoId);
+  }
+
+  bool puedeVerEmpresa(String? empresaGrupoId) {
+    return isSuperAdmin || 
+           isSuperInspector || 
+           (isAdmin && this.grupoId == empresaGrupoId) ||
+           (isInspector && this.grupoId == empresaGrupoId);
   }
 
   AuthProvider() {

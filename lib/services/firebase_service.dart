@@ -415,6 +415,17 @@ class FirebaseService {
     return doc.data();
   }
 
+  static Future<QuerySnapshot> getEmpresasPorGrupo(String? grupoId) async {
+  if (grupoId == null) {
+    return await _firestore.collection('empresas').orderBy('nombre').get();
+  }
+  return await _firestore
+      .collection('empresas')
+      .where('grupoId', isEqualTo: grupoId)
+      .orderBy('nombre')
+      .get();
+}
+
   static Future<int> contarCasosPorEmpresa(String empresaId, {bool? cerrados}) async {
     Query query = _firestore
         .collection('casos')

@@ -1,4 +1,4 @@
-// lib/screens/home_screen.dart - VERSIÓN COMPLETA CON LOGOUT PARA TODOS
+// lib/screens/home_screen.dart - VERSIÓN COMPLETA CON ASIGNACIÓN DE EMPRESAS
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -417,8 +417,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   final data = doc.data() as Map<String, dynamic>;
                   final empresaId = doc.id;
 
-                  // Verificar permisos de acceso
-                  if (!authProvider.puedeAccederRecurso(data['grupoId'])) {
+                  // NUEVO: Verificar permisos de acceso usando el nuevo método
+                  final puedeAcceder = authProvider.puedeAccederAEmpresa(empresaId);
+                  if (!puedeAcceder) {
                     return const SizedBox.shrink(); // No mostrar si no tiene acceso
                   }
 

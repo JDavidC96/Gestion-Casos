@@ -34,7 +34,7 @@ class _UserFormDialogState extends State<UserFormDialog> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   
-  String _selectedRole = 'user';
+  String _selectedRole = 'inspector'; // Cambiado de 'user' a 'inspector'
   Uint8List? _firma;
   final SignatureController _signatureController = SignatureController();
   bool _firmaGuardada = false;
@@ -46,7 +46,7 @@ class _UserFormDialogState extends State<UserFormDialog> {
       _cedulaController.text = widget.userData!['cedula'] ?? '';
       _displayNameController.text = widget.userData!['displayName'] ?? '';
       _emailController.text = widget.userData!['email'] ?? '';
-      _selectedRole = widget.userData!['role'] ?? 'user';
+      _selectedRole = widget.userData!['role'] ?? 'inspector'; // Cambiado de 'user' a 'inspector'
       
       // Cargar firma existente si está editando
       if (widget.userData!['firmaBase64'] != null) {
@@ -158,7 +158,8 @@ class _UserFormDialogState extends State<UserFormDialog> {
                             items: const [
                               DropdownMenuItem(value: 'super_admin', child: Text('Super Administrador')),
                               DropdownMenuItem(value: 'admin', child: Text('Administrador')),
-                              DropdownMenuItem(value: 'user', child: Text('Usuario Normal')),
+                              DropdownMenuItem(value: 'superinspector', child: Text('Super Inspector')),
+                              DropdownMenuItem(value: 'inspector', child: Text('Inspector')),
                             ],
                             onChanged: (value) {
                               setState(() => _selectedRole = value!);
