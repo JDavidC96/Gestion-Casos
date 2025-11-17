@@ -19,6 +19,8 @@ class CaseStateCardFirebase extends StatelessWidget {
   final ValueChanged<String> onDescripcionChanged;
   final ValueChanged<String?> onnivelPeligroChanged;
   final ValueChanged<String>? onRecomendacionesChanged;
+  final ValueChanged<String>? onUbicacionChanged;
+  final String? ubicacionTexto;
   final VoidCallback onTomarFoto;
   final VoidCallback? onCapturarFirma;
   final VoidCallback onGuardar;
@@ -40,6 +42,8 @@ class CaseStateCardFirebase extends StatelessWidget {
     required this.onDescripcionChanged,
     required this.onnivelPeligroChanged,
     this.onRecomendacionesChanged,
+    this.onUbicacionChanged,
+    this.ubicacionTexto,
     required this.onTomarFoto,
     this.onCapturarFirma,
     required this.onGuardar,
@@ -79,14 +83,17 @@ class CaseStateCardFirebase extends StatelessWidget {
               const SizedBox(height: 20),
               _buildDescripcionHallazgo(),
               const SizedBox(height: 16),
+              _buildUbicacionField(),
+              const SizedBox(height: 16),
               RiskLevelSelector(
                 nivelSeleccionado: nivelPeligro,
                 onChanged: bloqueado ? null : onnivelPeligroChanged,
                 enabled: !bloqueado,
               ),
               const SizedBox(height: 16),
-              if (!bloqueado) _buildRecomendacionesControl(),
-              if (!bloqueado) const SizedBox(height: 16),
+              // CAMBIO: Mostrar siempre las recomendaciones, no solo cuando no está bloqueado
+              _buildRecomendacionesControl(),
+              const SizedBox(height: 16),
               
               // Mostrar información de firma automática
               if (firma != null && usuarioNombre != null) 
@@ -153,6 +160,37 @@ class CaseStateCardFirebase extends StatelessWidget {
               ],
             ),
           ),
+      ],
+    );
+  }
+
+  Widget _buildUbicacionField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          "Ubicación *",
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          onChanged: onUbicacionChanged ?? (value) {},
+          controller: TextEditingController(text: ubicacionTexto ?? '')
+            ..selection = TextSelection.fromPosition(
+                TextPosition(offset: (ubicacionTexto ?? '').length)),
+          maxLines: 2,
+          readOnly: bloqueado,
+          decoration: InputDecoration(
+            hintText: "Ej: Parqueadero, Área de producción, Oficina administrativa...",
+            border: const OutlineInputBorder(),
+            filled: bloqueado,
+            fillColor: bloqueado ? Colors.grey[100] : null,
+            suffixIcon: bloqueado ? const Icon(Icons.lock) : null,
+          ),
+        ),
       ],
     );
   }
@@ -247,9 +285,13 @@ class CaseStateCardFirebase extends StatelessWidget {
             ..selection = TextSelection.fromPosition(
                 TextPosition(offset: (recomendacionesControl ?? '').length)),
           maxLines: 3,
-          decoration: const InputDecoration(
+          readOnly: bloqueado, // CAMBIO: Solo lectura cuando está bloqueado
+          decoration: InputDecoration(
             hintText: "Ingrese las recomendaciones de los inspectores...",
-            border: OutlineInputBorder(),
+            border: const OutlineInputBorder(),
+            filled: bloqueado,
+            fillColor: bloqueado ? Colors.grey[100] : null,
+            suffixIcon: bloqueado ? const Icon(Icons.lock) : null,
           ),
         ),
       ],

@@ -1,4 +1,4 @@
-// lib/screens/home_screen.dart - VERSIÓN COMPLETA ACTUALIZADA
+// lib/screens/home_screen.dart - VERSIÓN COMPLETA CON LOGOUT PARA TODOS
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -230,6 +230,35 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _cerrarSesion() async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Cerrar Sesión'),
+        content: const Text('¿Estás seguro de que deseas cerrar sesión?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Cerrar Sesión'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmar == true) {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      await authProvider.signOut();
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/login');
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
@@ -256,44 +285,43 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-          // Botón para administración si es super admin o admin
-          if (authProvider.isSuperAdmin || authProvider.isAdmin)
-            PopupMenuButton<String>(
-              onSelected: (value) {
-                if (value == 'admin') {
-                  if (authProvider.isSuperAdmin) {
-                    Navigator.pushNamed(context, '/superAdmin');
-                  } else {
-                    Navigator.pushNamed(context, '/admin');
-                  }
-                } else if (value == 'logout') {
-                  _cerrarSesion();
+          // Botón para administración si es super admin o admin + logout para todos
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == 'admin') {
+                if (authProvider.isSuperAdmin) {
+                  Navigator.pushNamed(context, '/superAdmin');
+                } else {
+                  Navigator.pushNamed(context, '/admin');
                 }
-              },
-              itemBuilder: (context) => [
-                if (authProvider.isSuperAdmin || authProvider.isAdmin)
-                  const PopupMenuItem(
-                    value: 'admin',
-                    child: Row(
-                      children: [
-                        Icon(Icons.admin_panel_settings),
-                        SizedBox(width: 8),
-                        Text('Administración'),
-                      ],
-                    ),
-                  ),
+              } else if (value == 'logout') {
+                _cerrarSesion();
+              }
+            },
+            itemBuilder: (context) => [
+              if (authProvider.isSuperAdmin || authProvider.isAdmin)
                 const PopupMenuItem(
-                  value: 'logout',
+                  value: 'admin',
                   child: Row(
                     children: [
-                      Icon(Icons.logout),
+                      Icon(Icons.admin_panel_settings),
                       SizedBox(width: 8),
-                      Text('Cerrar Sesión'),
+                      Text('Administración'),
                     ],
                   ),
                 ),
-              ],
-            ),
+              const PopupMenuItem(
+                value: 'logout',
+                child: Row(
+                  children: [
+                    Icon(Icons.logout),
+                    SizedBox(width: 8),
+                    Text('Cerrar Sesión'),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ],
       ),
       body: Container(
@@ -443,13 +471,5 @@ class _HomeScreenState extends State<HomeScreen> {
               )
             : null,
     );
-  }
-
-  Future<void> _cerrarSesion() async {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    await authProvider.signOut();
-    if (mounted) {
-      Navigator.pushReplacementNamed(context, '/login');
-    }
   }
 }

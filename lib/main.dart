@@ -8,6 +8,7 @@ import './providers/centro_trabajo_provider.dart';
 import './providers/interface_config_provider.dart';
 import './screens/splash_screen.dart';
 import './screens/login_screen.dart';
+import './screens/forgot_password_screen.dart';
 import './screens/super_admin_screen.dart';
 import './screens/admin_screen.dart';
 import './screens/setup_super_user_screen.dart';
@@ -54,6 +55,7 @@ class GestionCasosApp extends StatelessWidget {
           '/setup': (_) => const SetupSuperUserScreen(),
           '/interface_config': (_) => const InterfaceConfigScreen(),
           '/login': (_) => const LoginScreen(),
+          '/forgot_password': (_) => const ForgotPasswordScreen(),
           '/superAdmin': (_) => const SuperAdminScreen(),
           '/admin': (_) => const AdminScreen(),
 

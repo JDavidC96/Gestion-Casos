@@ -1,7 +1,9 @@
 // lib/screens/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/auth_provider.dart';
+import '../providers/auth_provider.dart' as my_auth;
+import 'forgot_password_screen.dart';
+import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -26,7 +28,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final authProvider = Provider.of<my_auth.AuthProvider>(context, listen: false);
     
     final success = await authProvider.signIn(
       _emailController.text.trim(),
@@ -45,6 +47,62 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       );
     }
+  }
+
+  Future<void> _handleGoogleLogin() async {
+    final authProvider = Provider.of<my_auth.AuthProvider>(context, listen: false);
+    
+    final result = await authProvider.signInWithGoogle();
+
+    if (!mounted) return;
+
+    if (result != null) {
+      if (result['needsRegistration'] == true) {
+        // SOLUCIÓN 4: Usar push con retorno de resultado
+        final registrationCompleted = await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+            builder: (context) => RegisterScreen(
+              googleUserData: result,
+            ),
+          ),
+        );
+        
+        // Si el registro se completó exitosamente, ir al home
+        if (registrationCompleted == true && mounted) {
+          Navigator.pushReplacementNamed(context, '/home');
+        }
+        // Si el usuario volvió sin completar el registro (false o null), quedarse en login
+      } else {
+        // Usuario existente - ir a home
+        Navigator.pushReplacementNamed(context, '/home');
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(authProvider.errorMessage ?? 'Error al iniciar sesión con Google'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _navigateToForgotPassword() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const ForgotPasswordScreen(),
+      ),
+    );
+  }
+
+  void _navigateToRegister() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const RegisterScreen(googleUserData: null),
+      ),
+    );
   }
 
   @override
@@ -75,10 +133,18 @@ class _LoginScreenState extends State<LoginScreen> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const Icon(
-                          Icons.account_circle,
-                          size: 100,
-                          color: Color(0xFF43CEA2),
+                        // Logo SafeGestion en lugar del icono de usuario
+                        Image.asset(
+                          'assets/images/SafeGestionLogo.png',
+                          height: 100,
+                          width: 100,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const Icon(
+                              Icons.account_circle,
+                              size: 100,
+                              color: Color(0xFF43CEA2),
+                            );
+                          },
                         ),
                         const SizedBox(height: 20),
                         const Text(
@@ -148,13 +214,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         Align(
                           alignment: Alignment.centerRight,
                           child: TextButton(
-                            onPressed: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text("Funcionalidad no implementada"),
-                                ),
-                              );
-                            },
+                            onPressed: _navigateToForgotPassword,
                             child: const Text(
                               "¿Olvidaste tu contraseña?",
                               style: TextStyle(color: Color(0xFF185A9D)),
@@ -164,7 +224,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(height: 20),
 
                         // Botón de login
-                        Consumer<AuthProvider>(
+                        Consumer<my_auth.AuthProvider>(
                           builder: (context, authProvider, _) {
                             return ElevatedButton(
                               style: ElevatedButton.styleFrom(
@@ -194,6 +254,103 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ),
                             );
                           },
+                        ),
+                        const SizedBox(height: 20),
+
+                        // Divisor
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Divider(
+                                color: Colors.grey.shade400,
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              child: Text(
+                                "O",
+                                style: TextStyle(
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: Divider(
+                                color: Colors.grey.shade400,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+
+                        // Botón de login con Google
+                        Consumer<my_auth.AuthProvider>(
+                          builder: (context, authProvider, _) {
+                            return OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                side: const BorderSide(color: Color(0xFFDB4437)),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              onPressed: authProvider.isLoading ? null : _handleGoogleLogin,
+                              child: authProvider.isLoading
+                                  ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        color: Color(0xFFDB4437),
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Image.asset(
+                                          'assets/images/google_icon.png',
+                                          height: 24,
+                                          width: 24,
+                                          errorBuilder: (context, error, stackTrace) {
+                                            return const Icon(
+                                              Icons.g_mobiledata,
+                                              size: 24,
+                                              color: Color(0xFFDB4437),
+                                            );
+                                          },
+                                        ),
+                                        const SizedBox(width: 12),
+                                        const Text(
+                                          "Continuar con Google",
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xFFDB4437),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 20),
+
+                        // Enlace para registro
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Text("¿No tienes cuenta?"),
+                            TextButton(
+                              onPressed: _navigateToRegister,
+                              child: const Text(
+                                "Regístrate",
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF185A9D),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),

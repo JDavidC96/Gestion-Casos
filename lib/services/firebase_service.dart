@@ -2,12 +2,21 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'dart:io';
 
 class FirebaseService {
   static final FirebaseAuth _auth = FirebaseAuth.instance;
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static final FirebaseStorage _storage = FirebaseStorage.instance;
+  
+  // GoogleSignIn
+  static final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: [
+      'email',
+      'profile',
+    ],
+  );
 
   // ============= AUTENTICACIÓN =============
   
@@ -34,6 +43,107 @@ class FirebaseService {
 
   static Stream<User?> authStateChanges() {
     return _auth.authStateChanges();
+  }
+
+  // Método para recuperación de contraseña
+  static Future<void> resetPassword(String email) async {
+    try {
+      await _auth.sendPasswordResetEmail(email: email);
+    } catch (e) {
+      print('Error enviando email de recuperación: $e');
+      rethrow;
+    }
+  }
+
+  // Método MODIFICADO para inicio de sesión con Google
+  static Future<Map<String, dynamic>?> signInWithGoogle() async {
+    try {
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      
+      if (googleUser == null) {
+        throw FirebaseAuthException(
+          code: 'google-signin-cancelled',
+          message: 'El inicio de sesión con Google fue cancelado',
+        );
+      }
+
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      final UserCredential userCredential = await _auth.signInWithCredential(credential);
+      final User? user = userCredential.user;
+
+      if (user != null) {
+        // Verificar si el usuario ya existe en Firestore
+        final userDoc = await _firestore.collection('users').doc(user.uid).get();
+        
+        if (!userDoc.exists) {
+          // Usuario NO existe - retornar datos para registro
+          return {
+            'needsRegistration': true,
+            'user': user,
+            'googleUser': googleUser,
+            'email': user.email,
+            'displayName': user.displayName ?? googleUser.displayName,
+            'photoURL': user.photoURL ?? googleUser.photoUrl,
+          };
+        } else {
+          // Usuario EXISTE - actualizar último login
+          await _firestore.collection('users').doc(user.uid).update({
+            'lastLogin': FieldValue.serverTimestamp(),
+          });
+          return {
+            'needsRegistration': false,
+            'user': user,
+          };
+        }
+      }
+
+      return null;
+    } catch (e) {
+      print('Error en login con Google: $e');
+      rethrow;
+    }
+  }
+
+  // Método para completar registro con Google
+  static Future<void> completeGoogleRegistration(
+    String userId,
+    String cedula,
+    String displayName,
+    String email,
+    String? firmaBase64,
+    String? grupoId,
+    String? grupoNombre,
+    String role,
+  ) async {
+    try {
+      await _firestore.collection('users').doc(userId).set({
+        'uid': userId,
+        'cedula': cedula,
+        'displayName': displayName,
+        'email': email,
+        'firmaBase64': firmaBase64,
+        'grupoId': grupoId,
+        'grupoNombre': grupoNombre,
+        'role': role,
+        'provider': 'google',
+        'createdAt': FieldValue.serverTimestamp(),
+        'lastLogin': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('Error completando registro con Google: $e');
+      rethrow;
+    }
+  }
+
+  // Método para cerrar sesión de Google
+  static Future<void> signOutGoogle() async {
+    await _googleSignIn.signOut();
   }
 
   // Crear super usuario (solo primera vez)
@@ -197,6 +307,24 @@ class FirebaseService {
         .where('grupoId', isEqualTo: grupoId)
         .orderBy('fechaCreacion', descending: true)
         .snapshots();
+  }
+
+  // NUEVO: Obtener casos por grupo (para reporte)
+  static Future<List<Map<String, dynamic>>> getCasosByGroup(String grupoId) async {
+    try {
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('casos')
+          .where('grupoId', isEqualTo: grupoId)
+          .get();
+      
+      return querySnapshot.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        return {...data, 'id': doc.id};
+      }).toList();
+    } catch (e) {
+      print('Error getting casos by group: $e');
+      return [];
+    }
   }
 
   static Future<void> cerrarCaso(String casoId) async {

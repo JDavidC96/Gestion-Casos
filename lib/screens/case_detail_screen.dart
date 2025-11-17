@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:signature/signature.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
+import 'report_screen.dart';
 import '../services/firebase_service.dart';
 import '../services/camera_service.dart';
 import '../providers/auth_provider.dart';
@@ -608,7 +609,11 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
       margin: const EdgeInsets.only(bottom: 20),
       child: ElevatedButton.icon(
         onPressed: () {
-          Navigator.pushNamed(context, '/report', arguments: {'casoId': _casoId});
+          Navigator.push(context,
+          MaterialPageRoute(
+            builder: (context) => ReportScreen(casoId: _casoId!),
+          ),
+          );
         },
         icon: const Icon(Icons.file_present, size: 24),
         label: const Text(

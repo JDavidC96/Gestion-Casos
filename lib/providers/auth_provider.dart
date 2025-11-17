@@ -95,8 +95,93 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  // Método para recuperación de contraseña
+  Future<bool> resetPassword(String email) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await FirebaseService.resetPassword(email);
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _errorMessage = _getErrorMessage(e);
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // Inicio de sesión con Google MODIFICADO
+  Future<Map<String, dynamic>?> signInWithGoogle() async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final result = await FirebaseService.signInWithGoogle();
+      _isLoading = false;
+      
+      if (result != null && result['needsRegistration'] == false) {
+        // Usuario existe, cargar datos
+        _user = result['user'];
+        await _loadUserData();
+      }
+      
+      notifyListeners();
+      return result;
+    } catch (e) {
+      _errorMessage = _getGoogleErrorMessage(e);
+      _isLoading = false;
+      notifyListeners();
+      return null;
+    }
+  }
+
+  // Método para completar registro con Google
+  Future<bool> completeGoogleRegistration(
+    String userId,
+    String cedula,
+    String displayName,
+    String email,
+    String? firmaBase64,
+    String? grupoId,
+    String? grupoNombre,
+    String role,
+  ) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await FirebaseService.completeGoogleRegistration(
+        userId,
+        cedula,
+        displayName,
+        email,
+        firmaBase64,
+        grupoId,
+        grupoNombre,
+        role,
+      );
+      
+      _isLoading = false;
+      await _loadUserData();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _errorMessage = _getErrorMessage(e);
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<void> signOut() async {
     await FirebaseService.signOut();
+    await FirebaseService.signOutGoogle(); // Cerrar sesión de Google también
     _user = null;
     _userData = null;
     notifyListeners();
@@ -119,8 +204,42 @@ class AuthProvider with ChangeNotifier {
           return 'Este usuario ha sido deshabilitado';
         case 'too-many-requests':
           return 'Demasiados intentos. Intenta más tarde';
+        case 'missing-android-pkg-name':
+        case 'missing-ios-bundle-id':
+          return 'Configuración de la app incompleta. Contacta al administrador';
         default:
           return 'Error de autenticación: ${error.message}';
+      }
+    }
+    return 'Error desconocido: $error';
+  }
+
+  // Método para manejar errores específicos de Google
+  String _getGoogleErrorMessage(dynamic error) {
+    if (error is FirebaseAuthException) {
+      switch (error.code) {
+        case 'account-exists-with-different-credential':
+          return 'Ya existe una cuenta con el mismo email pero con otro método de autenticación';
+        case 'invalid-credential':
+          return 'Credenciales de Google inválidas';
+        case 'operation-not-allowed':
+          return 'El inicio de sesión con Google no está habilitado';
+        case 'user-disabled':
+          return 'Este usuario ha sido deshabilitado';
+        case 'user-not-found':
+          return 'No se encontró el usuario';
+        case 'wrong-password':
+          return 'Contraseña incorrecta';
+        case 'invalid-verification-code':
+          return 'Código de verificación inválido';
+        case 'invalid-verification-id':
+          return 'ID de verificación inválido';
+        case 'google-signin-cancelled':
+          return 'El inicio de sesión con Google fue cancelado';
+        case 'network-request-failed':
+          return 'Error de conexión. Verifica tu internet';
+        default:
+          return 'Error con Google Sign-In: ${error.message}';
       }
     }
     return 'Error desconocido: $error';

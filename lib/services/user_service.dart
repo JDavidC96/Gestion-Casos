@@ -135,4 +135,57 @@ class UserService {
     }
     return null;
   }
+
+  // ========== NUEVOS MÉTODOS PARA LOGO ==========
+
+  /// Actualizar el logo del grupo
+  static Future<void> updateGroupLogo(String grupoId, String logoUrl) async {
+    try {
+      await _firestore
+          .collection('grupos')
+          .doc(grupoId)
+          .update({
+        'logoUrl': logoUrl,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      print('✅ Logo actualizado para grupo: $grupoId');
+    } catch (e) {
+      print('❌ Error actualizando logo del grupo: $e');
+      rethrow;
+    }
+  }
+
+  /// Eliminar el logo del grupo
+  static Future<void> removeGroupLogo(String grupoId) async {
+    try {
+      await _firestore
+          .collection('grupos')
+          .doc(grupoId)
+          .update({
+        'logoUrl': FieldValue.delete(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      print('✅ Logo eliminado para grupo: $grupoId');
+    } catch (e) {
+      print('❌ Error eliminando logo del grupo: $e');
+      rethrow;
+    }
+  }
+
+  /// Obtener el logo del grupo
+  static Future<String?> getGroupLogo(String grupoId) async {
+    try {
+      final doc = await _firestore
+          .collection('grupos')
+          .doc(grupoId)
+          .get();
+      
+      final logoUrl = doc.data()?['logoUrl'] as String?;
+      print('📊 Logo obtenido para grupo $grupoId: $logoUrl');
+      return logoUrl;
+    } catch (e) {
+      print('❌ Error obteniendo logo del grupo: $e');
+      return null;
+    }
+  }
 }
