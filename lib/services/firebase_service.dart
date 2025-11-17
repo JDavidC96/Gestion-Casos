@@ -309,7 +309,7 @@ class FirebaseService {
         .snapshots();
   }
 
-  // NUEVO: Obtener casos por grupo (para reporte)
+  // NUEVO: Obtener casos por grupo (para reporte) - CORREGIDO
   static Future<List<Map<String, dynamic>>> getCasosByGroup(String grupoId) async {
     try {
       final querySnapshot = await FirebaseFirestore.instance
@@ -318,7 +318,7 @@ class FirebaseService {
           .get();
       
       return querySnapshot.docs.map((doc) {
-        final data = doc.data() as Map<String, dynamic>;
+        final data = doc.data(); // <- Cast innecesario eliminado
         return {...data, 'id': doc.id};
       }).toList();
     } catch (e) {
@@ -416,15 +416,15 @@ class FirebaseService {
   }
 
   static Future<QuerySnapshot> getEmpresasPorGrupo(String? grupoId) async {
-  if (grupoId == null) {
-    return await _firestore.collection('empresas').orderBy('nombre').get();
+    if (grupoId == null) {
+      return await _firestore.collection('empresas').orderBy('nombre').get();
+    }
+    return await _firestore
+        .collection('empresas')
+        .where('grupoId', isEqualTo: grupoId)
+        .orderBy('nombre')
+        .get();
   }
-  return await _firestore
-      .collection('empresas')
-      .where('grupoId', isEqualTo: grupoId)
-      .orderBy('nombre')
-      .get();
-}
 
   static Future<int> contarCasosPorEmpresa(String empresaId, {bool? cerrados}) async {
     Query query = _firestore

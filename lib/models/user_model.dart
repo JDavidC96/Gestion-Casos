@@ -10,7 +10,7 @@ class AppUser {
   final String? grupoNombre;
   final DateTime createdAt;
   final Map<String, dynamic>? configInterfaz; // Configuración de interfaz
-  final List<String>? empresasAsignadas; // NUEVO: Empresas asignadas para inspectores
+  final List<String>? empresasAsignadas; // Empresas asignadas para inspectores
 
   AppUser({
     required this.uid,
@@ -23,7 +23,7 @@ class AppUser {
     this.grupoNombre,
     required this.createdAt,
     this.configInterfaz,
-    this.empresasAsignadas, // NUEVO CAMPO
+    this.empresasAsignadas,   
   });
 
   Map<String, dynamic> toMap() {
@@ -37,7 +37,7 @@ class AppUser {
       'grupoNombre': grupoNombre,
       'createdAt': createdAt.millisecondsSinceEpoch,
       'configInterfaz': configInterfaz,
-      'empresasAsignadas': empresasAsignadas, // NUEVO CAMPO
+      'empresasAsignadas': empresasAsignadas, 
     };
   }
 
@@ -55,7 +55,7 @@ class AppUser {
           ? DateTime.fromMillisecondsSinceEpoch(map['createdAt'])
           : DateTime.now(),
       configInterfaz: map['configInterfaz'],
-      empresasAsignadas: (map['empresasAsignadas'] as List<dynamic>?)?.cast<String>(), // NUEVO CAMPO
+      empresasAsignadas: (map['empresasAsignadas'] as List<dynamic>?)?.cast<String>(),
     );
   }
 
@@ -70,7 +70,7 @@ class AppUser {
     String? grupoNombre,
     DateTime? createdAt,
     Map<String, dynamic>? configInterfaz,
-    List<String>? empresasAsignadas, // NUEVO CAMPO
+    List<String>? empresasAsignadas, 
   }) {
     return AppUser(
       uid: uid,
@@ -83,7 +83,7 @@ class AppUser {
       grupoNombre: grupoNombre ?? this.grupoNombre,
       createdAt: createdAt ?? this.createdAt,
       configInterfaz: configInterfaz ?? this.configInterfaz,
-      empresasAsignadas: empresasAsignadas ?? this.empresasAsignadas, // NUEVO CAMPO
+      empresasAsignadas: empresasAsignadas ?? this.empresasAsignadas, 
     );
   }
 
@@ -104,12 +104,12 @@ class AppUser {
     return grupoId == groupIdToCheck && (role == 'admin' || role == 'super_admin');
   }
 
-  // NUEVO: Método para verificar si tiene empresas asignadas
+  // Método para verificar si tiene empresas asignadas
   bool get tieneEmpresasAsignadas {
     return empresasAsignadas != null && empresasAsignadas!.isNotEmpty;
   }
 
-  // NUEVO: Método para verificar acceso a empresa específica
+  // Método para verificar acceso a empresa específica
   bool puedeAccederAEmpresa(String empresaId) {
     if (role == 'super_admin' || role == 'admin') return true;
     return empresasAsignadas?.contains(empresaId) == true;

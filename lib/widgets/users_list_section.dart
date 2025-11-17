@@ -7,7 +7,7 @@ import '../widgets/user_form_dialog.dart';
 import '../widgets/user_card.dart';
 import '../widgets/assign_empresas_dialog.dart';
 import '../providers/auth_provider.dart';
-import '../providers/empresas_provider.dart'; // Añadir import
+import '../providers/empresas_provider.dart';
 
 class UsersListSection extends StatelessWidget {
   final String grupoId;
@@ -24,8 +24,7 @@ class UsersListSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
-    final empresasProvider = Provider.of<EmpresasProvider>(context); // Obtener el provider
-    
+    final empresasProvider = Provider.of<EmpresasProvider>(context);
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -37,7 +36,7 @@ class UsersListSection extends StatelessWidget {
           
           // Lista de usuarios/inspectores
           Expanded(
-            child: _buildUsersList(authProvider, empresasProvider), // Pasar el provider
+            child: _buildUsersList(authProvider, empresasProvider),
           ),
         ],
       ),
@@ -284,7 +283,7 @@ class UsersListSection extends StatelessWidget {
         _editarUsuario(context, userId, userData, authProvider);
         break;
       case 'assign_empresas':
-        _asignarEmpresas(context, userId, userData, authProvider, empresasProvider); // Pasar provider
+        _asignarEmpresas(context, userId, userData, authProvider, empresasProvider);
         break;
       case 'delete':
         _confirmarEliminarUsuario(context, userId, userData['displayName'], authProvider);
@@ -297,7 +296,7 @@ class UsersListSection extends StatelessWidget {
   String userId, 
   Map<String, dynamic> userData, 
   AuthProvider authProvider,
-  EmpresasProvider empresasProvider // Recibir el provider
+  EmpresasProvider empresasProvider 
 ) {
   // Verificación adicional de seguridad
   final puedeAsignar = authProvider.isAdmin || authProvider.isSuperAdmin;
@@ -329,7 +328,7 @@ class UsersListSection extends StatelessWidget {
       userId: userId,
       userDisplayName: userData['displayName'] ?? 'Usuario',
       empresasActuales: (userData['empresasAsignadas'] as List<dynamic>?)?.cast<String>() ?? [],
-      empresasProvider: empresasProvider, // Pasar el provider al dialog
+      empresasProvider: empresasProvider, 
     ),
   ).then((result) {
     // Solo refrescar si se guardaron cambios exitosamente

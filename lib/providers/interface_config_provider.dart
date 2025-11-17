@@ -1,4 +1,4 @@
-// lib/providers/interface_config_provider.dart - VERSIÓN CORREGIDA
+// lib/providers/interface_config_provider.dart
 import 'package:flutter/material.dart';
 import '../services/interface_config_service.dart';
 

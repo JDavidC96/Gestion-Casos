@@ -9,8 +9,10 @@ import 'report_screen.dart';
 import '../services/firebase_service.dart';
 import '../services/camera_service.dart';
 import '../providers/auth_provider.dart';
+import '../providers/interface_config_provider.dart';
 import '../widgets/case_state_card_firebase.dart';
 import '../widgets/closed_state_card_firebase.dart';
+import '../widgets/configurable_feature.dart';
 
 class CaseDetailScreen extends StatefulWidget {
   const CaseDetailScreen({super.key});
@@ -28,7 +30,7 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
 
   // Estado Abierto
   String _descripcionHallazgo = '';
-  String _nivelPeligro = 'Medio'; // Valor por defecto actualizado
+  String _nivelPeligro = 'Medio';
   String? _recomendacionesControl;
   String? _fotoAbiertoPath;
   String? _fotoAbiertoUrl;
@@ -51,15 +53,39 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
   String? _usuarioNombre;
   Uint8List? _usuarioFirma;
 
-  // Configuración
-  bool _mostrarNivelPeligroEnDetalle = true;
-  Map<String, dynamic> _configInterfaz = {};
-
   final SignatureController _signatureController = SignatureController(
     penStrokeWidth: 3,
     penColor: Colors.black,
     exportBackgroundColor: Colors.white,
   );
+
+  // Método para verificar permisos de cierre de casos
+  bool _puedeCerrarCasos() {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    // Admin puede cerrar casos en su grupo, super_admin en todos, inspectores según su rol
+    return authProvider.isAdmin || 
+           authProvider.isSuperAdmin || 
+           authProvider.isAnyInspector;
+  }
+
+  // Callbacks que no hacen nada para características deshabilitadas
+  void _tomarFotoDeshabilitada() {
+    // No hace nada - se llama cuando las fotos están deshabilitadas
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('La función de fotos está deshabilitada')),
+    );
+  }
+
+  void _nivelPeligroDeshabilitado(String? value) {
+    // No hace nada - se llama cuando el nivel de peligro está deshabilitado
+  }
+
+  void _firmaDeshabilitada() {
+    // No hace nada - se llama cuando las firmas están deshabilitadas
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('La función de firmas está deshabilitada')),
+    );
+  }
 
   @override
   void initState() {
@@ -67,7 +93,7 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadCaseData();
       _loadUserData();
-      _cargarConfiguracionGrupo();
+      _loadInterfaceConfig();
     });
   }
 
@@ -80,18 +106,24 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
         _usuarioId = userData['uid'];
         _usuarioNombre = userData['displayName'] ?? 'Usuario';
         
-        // Cargar firma del usuario si existe
         if (userData['firmaBase64'] != null) {
           _usuarioFirma = CameraService.base64ToFirma(userData['firmaBase64']);
-          // Usar la firma del usuario automáticamente
           _firmaAbierto = _usuarioFirma;
           _firmaCerrado = _usuarioFirma;
         }
         
-        // Establecer como responsable actual
         _responsableAbiertoNombre = _usuarioNombre;
         _responsableCerradoNombre = _usuarioNombre;
       });
+    }
+  }
+
+  void _loadInterfaceConfig() {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final configProvider = Provider.of<InterfaceConfigProvider>(context, listen: false);
+    
+    if (authProvider.grupoId != null) {
+      configProvider.loadConfig(authProvider.grupoId!);
     }
   }
 
@@ -102,31 +134,6 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
       if (_casoId != null) {
         _loadFromFirestore();
       }
-    }
-  }
-
-  Future<void> _cargarConfiguracionGrupo() async {
-    try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final grupoId = authProvider.grupoId;
-      
-      if (grupoId != null) {
-        final grupoDoc = await FirebaseFirestore.instance
-            .collection('grupos')
-            .doc(grupoId)
-            .get();
-        
-        if (grupoDoc.exists) {
-          final config = grupoDoc.data()?['configInterfaz'] ?? {};
-          setState(() {
-            _configInterfaz = config;
-            _mostrarNivelPeligroEnDetalle = config['mostrarNivelPeligroEnDetalle'] ?? true;
-            _nivelPeligro = config['nivelPeligroDefault'] ?? 'Medio';
-          });
-        }
-      }
-    } catch (e) {
-      print('Error cargando configuración: $e');
     }
   }
 
@@ -141,22 +148,19 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
           _casoData = data;
           _casoCerrado = data['cerrado'] ?? false;
 
-          // Cargar estado abierto
           final estadoAbierto = data['estadoAbierto'] as Map<String, dynamic>?;
           if (estadoAbierto != null) {
             _descripcionHallazgo = estadoAbierto['descripcionHallazgo'] ?? '';
-            _nivelPeligro = estadoAbierto['nivelPeligro'] ?? _nivelPeligro; // Usar valor cargado o por defecto
+            _nivelPeligro = estadoAbierto['nivelPeligro'] ?? _nivelPeligro;
             _recomendacionesControl = estadoAbierto['recomendacionesControl'];
             _fotoAbiertoUrl = estadoAbierto['fotoUrl'];
             _estadoAbiertoGuardado = estadoAbierto['guardado'] ?? false;
             _responsableAbiertoNombre = estadoAbierto['usuarioNombre'] ?? _usuarioNombre;
             
-            // Si ya hay firma guardada, usarla
             if (estadoAbierto['firmaBase64'] != null) {
               _firmaAbierto = CameraService.base64ToFirma(estadoAbierto['firmaBase64']);
             }
             
-            // Ubicación
             if (estadoAbierto['ubicacion'] != null) {
               final ub = estadoAbierto['ubicacion'];
               _ubicacionAbierto = Position(
@@ -174,7 +178,6 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
             }
           }
 
-          // Cargar estado cerrado
           final estadoCerrado = data['estadoCerrado'] as Map<String, dynamic>?;
           if (estadoCerrado != null) {
             _descripcionSolucion = estadoCerrado['descripcionSolucion'] ?? '';
@@ -182,12 +185,10 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
             _estadoCerradoGuardado = estadoCerrado['guardado'] ?? false;
             _responsableCerradoNombre = estadoCerrado['usuarioNombre'] ?? _usuarioNombre;
             
-            // Si ya hay firma guardada, usarla
             if (estadoCerrado['firmaBase64'] != null) {
               _firmaCerrado = CameraService.base64ToFirma(estadoCerrado['firmaBase64']);
             }
             
-            // Ubicación
             if (estadoCerrado['ubicacion'] != null) {
               final ub = estadoCerrado['ubicacion'];
               _ubicacionCerrado = Position(
@@ -215,11 +216,18 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
     }
   }
 
-  // Tomar foto
   Future<void> _tomarFoto({required bool esEstadoAbierto}) async {
     if (_tomandoFoto) return;
     if ((esEstadoAbierto && _estadoAbiertoGuardado) || 
         (!esEstadoAbierto && _estadoCerradoGuardado)) {
+      return;
+    }
+
+    final configProvider = Provider.of<InterfaceConfigProvider>(context, listen: false);
+    if (!configProvider.isFeatureEnabled('habilitarFotos')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('La función de fotos está deshabilitada')),
+      );
       return;
     }
 
@@ -254,17 +262,31 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
     }
   }
 
-  // Método vacío para capturar firma (ya no se usa pero es requerido)
-  void _capturarFirmaVacia() {
-    // Este método no hace nada porque la firma es automática
-    // Pero es necesario para cumplir con la interfaz requerida
+  void _capturarFirma() {
+    final configProvider = Provider.of<InterfaceConfigProvider>(context, listen: false);
+    if (!configProvider.isFeatureEnabled('habilitarFirmas')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('La función de firmas está deshabilitada')),
+      );
+      return;
+    }
+    // Aquí iría la lógica para capturar firma si estuviera habilitada
   }
 
-  // Guardar estado abierto
   Future<void> _guardarEstadoAbierto() async {
     if (_casoId == null) return;
 
-    // Validaciones
+    // Verificar permisos
+    if (!_puedeCerrarCasos()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No tienes permisos para guardar estados de casos'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     if (_descripcionHallazgo.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("La descripción del hallazgo es requerida")),
@@ -272,15 +294,18 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
       return;
     }
 
-    // Solo validar nivel de peligro si está habilitado en la configuración
-    if (_mostrarNivelPeligroEnDetalle && (_nivelPeligro.isEmpty || _nivelPeligro == 'No aplica')) {
+    final configProvider = Provider.of<InterfaceConfigProvider>(context, listen: false);
+    final mostrarNivelPeligro = configProvider.isFeatureEnabled('mostrarnivelPeligro');
+    
+    if (mostrarNivelPeligro && (_nivelPeligro.isEmpty || _nivelPeligro == 'No aplica')) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Selecciona un Nivel de peligro válido")),
       );
       return;
     }
 
-    if (_fotoAbiertoUrl == null) {
+    final habilitarFotos = configProvider.isFeatureEnabled('habilitarFotos');
+    if (habilitarFotos && _fotoAbiertoUrl == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Agrega una foto del hallazgo")),
       );
@@ -307,8 +332,7 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
         'fechaGuardado': FieldValue.serverTimestamp(),
       };
 
-      // Solo agregar nivel de peligro si está habilitado en la configuración
-      if (_mostrarNivelPeligroEnDetalle) {
+      if (mostrarNivelPeligro) {
         estadoAbiertoData['nivelPeligro'] = _nivelPeligro;
       }
 
@@ -344,11 +368,20 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
     }
   }
 
-  // Guardar estado cerrado
   Future<void> _guardarEstadoCerrado() async {
     if (_casoId == null) return;
 
-    // Validaciones
+    // Verificar permisos
+    if (!_puedeCerrarCasos()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No tienes permisos para cerrar casos'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     if (_descripcionSolucion.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("La descripción de la solución es requerida")),
@@ -356,7 +389,9 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
       return;
     }
 
-    if (_fotoCerradoUrl == null) {
+    final configProvider = Provider.of<InterfaceConfigProvider>(context, listen: false);
+    final habilitarFotos = configProvider.isFeatureEnabled('habilitarFotos');
+    if (habilitarFotos && _fotoCerradoUrl == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Agrega una foto de la solución")),
       );
@@ -418,6 +453,20 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
   Widget build(BuildContext context) {
     final empresaNombre = _casoData?['empresaNombre'] ?? "Sin empresa";
     final nombre = _casoData?['nombre'] ?? "Caso sin descripción";
+    final configProvider = Provider.of<InterfaceConfigProvider>(context);
+    final mostrarNivelPeligro = configProvider.isFeatureEnabled('mostrarnivelPeligro');
+    final habilitarFotos = configProvider.isFeatureEnabled('habilitarFotos');
+    final habilitarFirmas = configProvider.isFeatureEnabled('habilitarFirmas');
+
+    // Callbacks condicionales
+    final onTomarFotoAbierto = habilitarFotos ? () => _tomarFoto(esEstadoAbierto: true) : _tomarFotoDeshabilitada;
+    final onTomarFotoCerrado = habilitarFotos ? () => _tomarFoto(esEstadoAbierto: false) : _tomarFotoDeshabilitada;
+    final onNivelPeligroChanged = mostrarNivelPeligro ? (String? value) {
+      if (value != null) {
+        setState(() => _nivelPeligro = value);
+      }
+    } : _nivelPeligroDeshabilitado;
+    final onCapturarFirma = habilitarFirmas ? _capturarFirma : _firmaDeshabilitada;
 
     return Scaffold(
       appBar: AppBar(
@@ -466,16 +515,12 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
                             onDescripcionChanged: (value) {
                               setState(() => _descripcionHallazgo = value);
                             },
-                            onnivelPeligroChanged: (value) {
-                              if (value != null) {
-                                setState(() => _nivelPeligro = value);
-                              }
-                            },
+                            onnivelPeligroChanged: onNivelPeligroChanged,
                             onRecomendacionesChanged: (value) {
                               setState(() => _recomendacionesControl = value);
                             },
-                            onTomarFoto: () => _tomarFoto(esEstadoAbierto: true),
-                            onCapturarFirma: _capturarFirmaVacia,
+                            onTomarFoto: onTomarFotoAbierto,
+                            onCapturarFirma: onCapturarFirma,
                             onGuardar: _guardarEstadoAbierto,
                             tomandoFoto: _tomandoFoto,
                           ),
@@ -497,14 +542,19 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
                               onDescripcionSolucionChanged: (value) {
                                 setState(() => _descripcionSolucion = value);
                               },
-                              onTomarFoto: () => _tomarFoto(esEstadoAbierto: false),
-                              onCapturarFirma: _capturarFirmaVacia,
+                              onTomarFoto: onTomarFotoCerrado,
+                              onCapturarFirma: onCapturarFirma,
                               onGuardar: _guardarEstadoCerrado,
                               tomandoFoto: _tomandoFoto,
                             ),
 
-                          if (_estadoAbiertoGuardado && _estadoCerradoGuardado)
-                            _buildGenerarReporteButton(),
+                          // Botón de generar reporte configurable
+                          ConfigurableFeature(
+                            feature: 'habilitarReportes',
+                            child: _estadoAbiertoGuardado && _estadoCerradoGuardado
+                                ? _buildGenerarReporteButton()
+                                : const SizedBox.shrink(),
+                          ),
                         ],
                       ),
                     ),
@@ -561,7 +611,6 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
               ),
             ],
           ),
-          // Mostrar información del usuario actual
           if (_usuarioNombre != null) ...[
             const SizedBox(height: 8),
             Row(
@@ -584,6 +633,8 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
   }
 
   Widget _buildCerrarCasoButton() {
+    if (!_puedeCerrarCasos()) return const SizedBox.shrink();
+    
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.symmetric(vertical: 16),

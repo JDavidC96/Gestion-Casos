@@ -41,7 +41,6 @@ class EmpresaCard extends StatelessWidget {
           children: [
             _buildCardContent(),
             _buildCaseCountBadge(),
-            if (!puedeEditar) _buildReadOnlyBadge(),
           ],
         ),
       ),
@@ -128,25 +127,4 @@ class EmpresaCard extends StatelessWidget {
     );
   }
 
-  Widget _buildReadOnlyBadge() {
-    return Positioned(
-      left: 8,
-      top: 8,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: Colors.grey[300],
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: const Text(
-          'Solo lectura',
-          style: TextStyle(
-            color: Colors.grey,
-            fontSize: 10,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ),
-    );
-  }
 }

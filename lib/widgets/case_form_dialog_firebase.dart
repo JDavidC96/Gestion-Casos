@@ -38,8 +38,7 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
   String _selectednivelPeligro = 'Medio';
   bool _isLoading = false;
 
-  // Configuración de la interfaz
-  Map<String, dynamic> _configInterfaz = {};
+  // Configuración de la interfaz - ELIMINAR el mapa completo
   bool _mostrarNivelPeligroEnDialog = false;
 
   List<String> get _categorias => RiskData.getCategorias();
@@ -69,7 +68,7 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
         if (grupoDoc.exists) {
           final config = grupoDoc.data()?['configInterfaz'] ?? {};
           setState(() {
-            _configInterfaz = config;
+            // Usar directamente las propiedades sin guardar el mapa completo
             _mostrarNivelPeligroEnDialog = config['mostrarNivelPeligroEnDialog'] ?? false;
             _selectednivelPeligro = config['nivelPeligroDefault'] ?? 'Medio';
           });

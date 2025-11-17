@@ -4,12 +4,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import '../services/user_service.dart';
 import '../providers/auth_provider.dart';
-import '../providers/empresas_provider.dart'; // Importar el nuevo provider
+import '../providers/empresas_provider.dart'; 
 import '../widgets/user_form_dialog.dart';
 import '../widgets/group_form_dialog.dart';
 import '../widgets/group_users_dialog.dart';
 import '../widgets/user_card.dart';
 import '../widgets/group_card.dart';
+import '../widgets/assign_empresas_dialog.dart'; // Asegúrate de importar este widget
 
 class SuperAdminScreen extends StatefulWidget {
   const SuperAdminScreen({super.key});
@@ -21,21 +22,14 @@ class SuperAdminScreen extends StatefulWidget {
 class _SuperAdminScreenState extends State<SuperAdminScreen> {
   int _selectedIndex = 0;
   final _scaffoldKey = GlobalKey<ScaffoldState>();
-  late EmpresasProvider _empresasProvider; // Añadir provider
 
   @override
-  void initState() {
-    super.initState();
-    _empresasProvider = EmpresasProvider(); // Inicializar provider
-  }
-
-  @override
-Widget build(BuildContext context) {
-  return MultiProvider(
-    providers: [
-      ChangeNotifierProvider(create: (_) => EmpresasProvider()),
-    ],
-    child: Scaffold(
+  Widget build(BuildContext context) {
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => EmpresasProvider()),
+      ],
+      child: Scaffold(
         key: _scaffoldKey,
         appBar: _buildAppBar(context),
         body: _buildBody(),
@@ -322,6 +316,9 @@ Widget build(BuildContext context) {
       case 'edit':
         _editarUsuario(userId, userData);
         break;
+      case 'assign_empresas':
+        _asignarEmpresas(userId, userData);
+        break;
       case 'delete':
         _confirmarEliminarUsuario(userId, userData['displayName']);
         break;
@@ -343,6 +340,37 @@ Widget build(BuildContext context) {
         _confirmarEliminarGrupo(groupId, groupData['nombre']);
         break;
     }
+  }
+
+  void _asignarEmpresas(String userId, Map<String, dynamic> userData) {
+    final empresasProvider = Provider.of<EmpresasProvider>(context, listen: false);
+    
+    // Verificar si es inspector
+    final esInspector = userData['role'] == 'inspector' || userData['role'] == 'superinspector';
+    if (!esInspector) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Solo se pueden asignar empresas a inspectores'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => AssignEmpresasDialog(
+        userId: userId,
+        userDisplayName: userData['displayName'] ?? 'Usuario',
+        empresasActuales: (userData['empresasAsignadas'] as List<dynamic>?)?.cast<String>() ?? [],
+        empresasProvider: empresasProvider,
+      ),
+    ).then((result) {
+      if (result == true && context.mounted) {
+        empresasProvider.refreshEmpresasForUser(userId);
+        _mostrarSnackBar('Empresas asignadas exitosamente', Colors.green);
+      }
+    });
   }
 
   void _gestionarUsuarios(String groupId, Map<String, dynamic> groupData) {

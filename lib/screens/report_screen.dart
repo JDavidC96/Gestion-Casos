@@ -4,9 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'package:excel/excel.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:http/http.dart' as http;
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:open_file/open_file.dart';
 import '../services/firebase_service.dart';
 import '../providers/auth_provider.dart';
@@ -24,7 +22,6 @@ class _ReportScreenState extends State<ReportScreen> {
   bool _isGenerating = false;
   Map<String, dynamic>? _casoData;
   String? _casoId;
-  String? _grupoId;
   String? _grupoNombre;
   bool _isLoading = true;
 
@@ -46,7 +43,6 @@ class _ReportScreenState extends State<ReportScreen> {
   void _loadGrupoInfo() {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     setState(() {
-      _grupoId = authProvider.grupoId;
       _grupoNombre = authProvider.grupoNombre;
     });
   }

@@ -32,8 +32,8 @@ Widget build(BuildContext context) {
 
   return MultiProvider(
     providers: [
-      ChangeNotifierProvider(create: (_) => _adminController),
-      ChangeNotifierProvider(create: (_) => EmpresasProvider()),
+      ChangeNotifierProvider.value(value: _adminController),
+      ChangeNotifierProvider.value(value: _empresasProvider),
     ],
     child: _AdminScreenContent(authProvider: authProvider),
   );
