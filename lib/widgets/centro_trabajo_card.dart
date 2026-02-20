@@ -1,4 +1,4 @@
-// lib/widgets/centro_trabajo_card.dart - VERSIÓN ACTUALIZADA
+// lib/widgets/centro_trabajo_card.dart
 import 'package:flutter/material.dart';
 import '../models/centro_trabajo_model.dart';
 
@@ -7,6 +7,7 @@ class CentroTrabajoCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onLongPress;
   final bool puedeEditar;
+  final int casosAbiertos; 
 
   const CentroTrabajoCard({
     super.key,
@@ -14,6 +15,7 @@ class CentroTrabajoCard extends StatelessWidget {
     required this.onTap,
     required this.onLongPress,
     this.puedeEditar = true,
+    this.casosAbiertos = 0, 
   });
 
   IconData _getIconForType(String tipo) {
@@ -69,10 +71,23 @@ class CentroTrabajoCard extends StatelessWidget {
     }
   }
 
+  Color _getColorForCasos(int casos) {
+    if (casos == 0) return Colors.green;
+    if (casos <= 3) return Colors.orange;
+    return Colors.red;
+  }
+
+  String _getTextoCasos(int casos) {
+    if (casos == 0) return 'Sin casos';
+    if (casos == 1) return '1 caso abierto';
+    return '$casos casos abiertos';
+  }
+
   @override
   Widget build(BuildContext context) {
     final iconColor = _getColorForType(centro.tipo);
     final iconData = _getIconForType(centro.tipo);
+    final colorCasos = _getColorForCasos(casosAbiertos);
 
     return Card(
       elevation: 4,
@@ -127,28 +142,76 @@ class CentroTrabajoCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: iconColor.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: iconColor.withOpacity(0.3)),
-                      ),
-                      child: Text(
-                        centro.tipo,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: iconColor,
-                          fontWeight: FontWeight.bold,
+                    Row(
+                      children: [
+                        // Badge del tipo de centro
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: iconColor.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: iconColor.withOpacity(0.3)),
+                          ),
+                          child: Text(
+                            centro.tipo,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: iconColor,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        // Badge de casos abiertos
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: colorCasos.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: colorCasos.withOpacity(0.3)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 6,
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  color: colorCasos,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                _getTextoCasos(casosAbiertos),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: colorCasos,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
-              // Indicador de permisos
-              if (!puedeEditar)
-                const Icon(Icons.lock_outline, color: Colors.grey, size: 20),
+              // Indicador de permisos y flecha de navegación
+              Column(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  if (!puedeEditar)
+                    const Icon(Icons.lock_outline, color: Colors.grey, size: 16),
+                  const SizedBox(height: 8),
+                  Icon(
+                    Icons.arrow_forward_ios,
+                    size: 16,
+                    color: Colors.grey[400],
+                  ),
+                ],
+              ),
             ],
           ),
         ),

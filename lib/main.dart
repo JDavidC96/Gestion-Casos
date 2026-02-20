@@ -11,7 +11,6 @@ import './screens/login_screen.dart';
 import './screens/forgot_password_screen.dart';
 import './screens/super_admin_screen.dart';
 import './screens/admin_screen.dart';
-import './screens/setup_super_user_screen.dart';
 import './screens/home_screen.dart';
 import './screens/centros_trabajo_screen.dart';
 import './screens/case_list_screen.dart';
@@ -52,7 +51,6 @@ class GestionCasosApp extends StatelessWidget {
         initialRoute: '/splash',
         routes: {
           '/splash': (_) => const SplashScreen(),
-          '/setup': (_) => const SetupSuperUserScreen(),
           '/interface_config': (_) => const InterfaceConfigScreen(),
           '/login': (_) => const LoginScreen(),
           '/forgot_password': (_) => const ForgotPasswordScreen(),

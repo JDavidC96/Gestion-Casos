@@ -23,8 +23,14 @@ class CaseListScreen extends StatefulWidget {
 }
 
 class _CaseListScreenState extends State<CaseListScreen> {
-  late Empresa _empresa;
-  late String _empresaId;
+  // QUITAR 'late' y inicializar con valores por defecto
+  Empresa _empresa = Empresa(
+    id: "empresa_default",
+    nombre: "Empresa X",
+    nit: "",
+    icon: Icons.business,
+  );
+  String _empresaId = "empresa_default";
   String? _centroId;
   String? _centroNombre;
   IconData? _empresaIcon;
@@ -33,10 +39,25 @@ class _CaseListScreenState extends State<CaseListScreen> {
   @override
   void initState() {
     super.initState();
+    // Inicializar inmediatamente con valores por defecto
+    _initializeWithDefaults();
+    
     // Usar postFrameCallback para inicializar después del primer build
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeData();
     });
+  }
+
+  void _initializeWithDefaults() {
+    // Establecer valores por defecto inmediatamente
+    _empresa = Empresa(
+      id: "empresa_default",
+      nombre: "Empresa X",
+      nit: "",
+      icon: Icons.business,
+    );
+    _empresaId = "empresa_default";
+    _empresaIcon = Icons.business;
   }
 
   void _initializeData() {
@@ -51,26 +72,20 @@ class _CaseListScreenState extends State<CaseListScreen> {
     final args = ModalRoute.of(context)!.settings.arguments as Map?;
     
     if (args != null) {
-      _empresaId = args["empresaId"] ?? "empresa_default";
-      _empresa = Empresa(
-        id: _empresaId,
-        nombre: args["empresaNombre"] ?? "Empresa X",
-        nit: args["nit"] ?? "",
-        icon: args["icon"] ?? Icons.business,
-      );
-      _centroId = args["centroId"];
-      _centroNombre = args["centroNombre"];
-      _empresaIcon = args["icon"];
-    } else {
-      _empresaId = "empresa_default";
-      _empresa = Empresa(
-        id: "empresa_default",
-        nombre: "Empresa X",
-        nit: "",
-        icon: Icons.business,
-      );
-      _empresaIcon = Icons.business;
+      setState(() {
+        _empresaId = args["empresaId"] ?? "empresa_default";
+        _empresa = Empresa(
+          id: _empresaId,
+          nombre: args["empresaNombre"] ?? "Empresa X",
+          nit: args["nit"] ?? "",
+          icon: args["icon"] ?? Icons.business,
+        );
+        _centroId = args["centroId"];
+        _centroNombre = args["centroNombre"];
+        _empresaIcon = args["icon"];
+      });
     }
+    // Si no hay argumentos, ya tenemos los valores por defecto
   }
 
   // Método simplificado: solo cargar configuración sin setState
@@ -195,16 +210,6 @@ class _CaseListScreenState extends State<CaseListScreen> {
     final authProvider = Provider.of<AuthProvider>(context);
     final configProvider = Provider.of<InterfaceConfigProvider>(context);
 
-    // Si no está inicializado, mostrar loading
-    if (!_isInitialized) {
-      return Scaffold(
-        appBar: AppBar(
-          title: Text(_getAppBarTitle()),
-        ),
-        body: const Center(child: CircularProgressIndicator()),
-      );
-    }
-
     return Scaffold(
       appBar: AppBar(
         title: Column(
@@ -282,126 +287,135 @@ class _CaseListScreenState extends State<CaseListScreen> {
           ),
         ],
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseService.getCasosPorEmpresaStream(_empresaId),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.error, size: 64, color: Colors.red),
-                  const SizedBox(height: 16),
-                  Text('Error: ${snapshot.error}'),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Volver'),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
-          }
-
-          if (!snapshot.hasData) {
-            return const Center(child: Text('No hay datos'));
-          }
-
-          // Filtrar casos por grupo
-          final casosFiltrados = snapshot.data!.docs.where((doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            return authProvider.puedeAccederRecurso(data['grupoId']);
-          }).toList();
-
-          // Separar casos abiertos y cerrados
-          final casosAbiertos = <QueryDocumentSnapshot>[];
-          final casosCerrados = <Case>[];
-
-          for (var doc in casosFiltrados) {
-            final data = doc.data() as Map<String, dynamic>;
-            final cerrado = data['cerrado'] ?? false;
-
-            if (!cerrado) {
-              casosAbiertos.add(doc);
-            } else {
-              casosCerrados.add(Case(
-                id: doc.id,
-                empresaId: data['empresaId'] ?? '',
-                empresaNombre: data['empresaNombre'] ?? '',
-                nombre: data['nombre'] ?? '',
-                tipoRiesgo: data['tipoRiesgo'] ?? '',
-                descripcionRiesgo: data['descripcionRiesgo'] ?? '',
-                nivelPeligro: _getNivelPeligroActualizado(data),
-                fechaCreacion: (data['fechaCreacion'] as Timestamp?)?.toDate() ?? DateTime.now(),
-                fechaCierre: (data['fechaCierre'] as Timestamp?)?.toDate(),
-                cerrado: true,
-              ));
-            }
-          }
-
-          if (casosAbiertos.isEmpty) {
-            return EmptyCasesState(
-              empresaIcon: _empresaIcon ?? Icons.business,
-              empresaNombre: _empresa.nombre,
-              centroNombre: _centroNombre,
-              casosCerradosCount: casosCerrados.length,
-              onAddCase: _openAddCaseModal,
-              onViewClosedCases: () => _navegarACasosCerrados(casosCerrados),
-              puedeAgregar: _puedeCrearCasos(authProvider),
-            );
-          }
-
-          return Column(
-            children: [
-              // Header de casos cerrados - configurable
-              ConfigurableFeature(
-                feature: 'mostrarCasosCerrados',
-                child: casosCerrados.isNotEmpty
-                    ? ClosedCasesHeader(
-                        casosCerradosCount: casosCerrados.length,
-                        onViewClosedCases: () => _navegarACasosCerrados(casosCerrados),
-                      )
-                    : const SizedBox.shrink(),
-              ),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: casosAbiertos.length,
-                  itemBuilder: (context, index) {
-                    final doc = casosAbiertos[index];
-                    final data = doc.data() as Map<String, dynamic>;
-                    final casoId = doc.id;
-
-                    final caso = Case(
-                      id: casoId,
-                      empresaId: data['empresaId'] ?? '',
-                      empresaNombre: data['empresaNombre'] ?? '',
-                      nombre: data['nombre'] ?? '',
-                      tipoRiesgo: data['tipoRiesgo'] ?? '',
-                      descripcionRiesgo: data['descripcionRiesgo'] ?? '',
-                      nivelPeligro: _getNivelPeligroActualizado(data),
-                      fechaCreacion: (data['fechaCreacion'] as Timestamp?)?.toDate() ?? DateTime.now(),
-                      cerrado: false,
-                    );
-
-                    return CaseCard(
-                      caso: caso,
-                      onTap: () => _navegarADetalleCaso(casoId, caso),
-                      // Pasar configuración al CaseCard
-                      mostrarNivelRiesgo: _debeMostrarNivelRiesgo(caso, configProvider),
-                      nivelRiesgoColor: _getNivelRiesgoColor(caso, configProvider),
-                    );
-                  },
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF6A11CB), Color(0xFF2575FC)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: StreamBuilder<QuerySnapshot>(
+          stream: FirebaseService.getCasosPorEmpresaStream(_empresaId),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.error, size: 64, color: Colors.red),
+                    const SizedBox(height: 16),
+                    Text('Error: ${snapshot.error}'),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Volver'),
+                    ),
+                  ],
                 ),
-              ),
-            ],
-          );
-        },
+              );
+            }
+
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(
+                child: CircularProgressIndicator(color: Colors.white),
+              );
+            }
+
+            if (!snapshot.hasData) {
+              return const Center(child: Text('No hay datos', style: TextStyle(color: Colors.white)));
+            }
+
+            // Filtrar casos por grupo
+            final casosFiltrados = snapshot.data!.docs.where((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              return authProvider.puedeAccederRecurso(data['grupoId']);
+            }).toList();
+
+            // Separar casos abiertos y cerrados
+            final casosAbiertos = <QueryDocumentSnapshot>[];
+            final casosCerrados = <Case>[];
+
+            for (var doc in casosFiltrados) {
+              final data = doc.data() as Map<String, dynamic>;
+              final cerrado = data['cerrado'] ?? false;
+
+              if (!cerrado) {
+                casosAbiertos.add(doc);
+              } else {
+                casosCerrados.add(Case(
+                  id: doc.id,
+                  empresaId: data['empresaId'] ?? '',
+                  empresaNombre: data['empresaNombre'] ?? '',
+                  nombre: data['nombre'] ?? '',
+                  tipoRiesgo: data['tipoRiesgo'] ?? '',
+                  descripcionRiesgo: data['descripcionRiesgo'] ?? '',
+                  nivelPeligro: _getNivelPeligroActualizado(data),
+                  fechaCreacion: (data['fechaCreacion'] as Timestamp?)?.toDate() ?? DateTime.now(),
+                  fechaCierre: (data['fechaCierre'] as Timestamp?)?.toDate(),
+                  cerrado: true,
+                ));
+              }
+            }
+
+            if (casosAbiertos.isEmpty) {
+              return EmptyCasesState(
+                empresaIcon: _empresaIcon ?? Icons.business,
+                empresaNombre: _empresa.nombre,
+                centroNombre: _centroNombre,
+                casosCerradosCount: casosCerrados.length,
+                onAddCase: _openAddCaseModal,
+                onViewClosedCases: () => _navegarACasosCerrados(casosCerrados),
+                puedeAgregar: _puedeCrearCasos(authProvider),
+              );
+            }
+
+            return Column(
+              children: [
+                // Header de casos cerrados - configurable
+                ConfigurableFeature(
+                  feature: 'mostrarCasosCerrados',
+                  child: casosCerrados.isNotEmpty
+                      ? ClosedCasesHeader(
+                          casosCerradosCount: casosCerrados.length,
+                          onViewClosedCases: () => _navegarACasosCerrados(casosCerrados),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: casosAbiertos.length,
+                    itemBuilder: (context, index) {
+                      final doc = casosAbiertos[index];
+                      final data = doc.data() as Map<String, dynamic>;
+                      final casoId = doc.id;
+
+                      final caso = Case(
+                        id: casoId,
+                        empresaId: data['empresaId'] ?? '',
+                        empresaNombre: data['empresaNombre'] ?? '',
+                        nombre: data['nombre'] ?? '',
+                        tipoRiesgo: data['tipoRiesgo'] ?? '',
+                        descripcionRiesgo: data['descripcionRiesgo'] ?? '',
+                        nivelPeligro: _getNivelPeligroActualizado(data),
+                        fechaCreacion: (data['fechaCreacion'] as Timestamp?)?.toDate() ?? DateTime.now(),
+                        cerrado: false,
+                      );
+
+                      return CaseCard(
+                        caso: caso,
+                        onTap: () => _navegarADetalleCaso(casoId, caso),
+                        // Pasar configuración al CaseCard
+                        mostrarNivelRiesgo: _debeMostrarNivelRiesgo(caso, configProvider),
+                        nivelRiesgoColor: _getNivelRiesgoColor(caso, configProvider),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
       ),
       floatingActionButton: 
           // Mostrar FAB si tiene permisos Y está habilitado en configuración

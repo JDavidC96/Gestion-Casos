@@ -158,8 +158,8 @@ class _HomeScreenState extends State<HomeScreen> {
       context,
       '/centros',
       arguments: {
-        "id": empresaId,
-        "nombre": empresa.nombre,
+        "empresaId": empresaId,
+        "empresaNombre": empresa.nombre,
         "nit": empresa.nit,
         "icon": empresa.icon,
       },
