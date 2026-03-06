@@ -19,16 +19,19 @@ import './screens/report_screen.dart';
 import './screens/closed_cases_screen.dart';
 import './screens/interface_config_screen.dart';
 import 'firebase_options.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import './services/case_draft_service.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Hive.initFlutter();
+  await CaseDraftService.instance.init();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
   runApp(const GestionCasosApp());
 }
-
-
 
 class GestionCasosApp extends StatelessWidget {
   const GestionCasosApp({super.key});

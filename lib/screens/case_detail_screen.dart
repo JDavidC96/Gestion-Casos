@@ -1,5 +1,6 @@
 // lib/screens/case_detail_screen.dart
 import 'dart:typed_data';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:signature/signature.dart';
@@ -13,6 +14,8 @@ import '../providers/interface_config_provider.dart';
 import '../widgets/case_state_card_firebase.dart';
 import '../widgets/closed_state_card_firebase.dart';
 import '../widgets/configurable_feature.dart';
+import '../services/case_draft_service.dart';
+
 
 class CaseDetailScreen extends StatefulWidget {
   const CaseDetailScreen({super.key});
@@ -27,6 +30,8 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
   bool _isLoading = false;
   bool _tomandoFoto = false;
   bool _casoCerrado = false;
+  Timer? _draftDebounce;
+  bool _draftRestored = false;
 
   // Estado Abierto
   String _descripcionHallazgo = '';
@@ -38,6 +43,7 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
   Position? _ubicacionAbierto;
   bool _estadoAbiertoGuardado = false;
   String? _responsableAbiertoNombre;
+  final TextEditingController _ubicacionTextoCtrl = TextEditingController();
 
   // Estado Cerrado
   String _descripcionSolucion = '';
@@ -87,6 +93,64 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
     );
   }
 
+  Map<String, dynamic> _buildDraft() {
+  return {
+    'descripcionHallazgo': _descripcionHallazgo,
+    'nivelPeligro': _nivelPeligro,
+    'recomendacionesControl': _recomendacionesControl,
+    'fotoAbiertoPath': _fotoAbiertoPath,
+    'fotoAbiertoUrl': _fotoAbiertoUrl,
+    'descripcionSolucion': _descripcionSolucion,
+    'fotoCerradoPath': _fotoCerradoPath,
+    'ubicacionTexto': _ubicacionTextoCtrl.text,
+    'fotoCerradoUrl': _fotoCerradoUrl,
+  };
+}
+
+// Método para programar guardado automático del borrador
+void _scheduleDraftSave() {
+  if (_casoId == null) return;
+
+  _draftDebounce?.cancel();
+  _draftDebounce = Timer(const Duration(milliseconds: 600), () async {
+    try {
+      await CaseDraftService.instance.saveDraft(_casoId!, _buildDraft());
+    } catch (_) {
+      // silencioso
+    }
+  });
+}
+
+// Método para restaurar borrador si existe
+Future<void> _restoreDraftIfAny() async {
+  if (_casoId == null || _draftRestored) return;
+
+  final draft = await CaseDraftService.instance.getDraft(_casoId!);
+  _draftRestored = true;
+  if (draft == null) return;
+  if (!mounted) return;
+
+  setState(() {
+    if (!_estadoAbiertoGuardado) {
+      _descripcionHallazgo = draft['descripcionHallazgo'] ?? _descripcionHallazgo;
+      _nivelPeligro = draft['nivelPeligro'] ?? _nivelPeligro;
+      final ut = draft['ubicacionTexto'];
+      if (ut != null) {
+        _ubicacionTextoCtrl.text = ut;
+      }
+      _recomendacionesControl = draft['recomendacionesControl'] ?? _recomendacionesControl;
+      _fotoAbiertoPath = draft['fotoAbiertoPath'] ?? _fotoAbiertoPath;
+      _fotoAbiertoUrl = draft['fotoAbiertoUrl'] ?? _fotoAbiertoUrl;
+    }
+
+    if (!_estadoCerradoGuardado) {
+      _descripcionSolucion = draft['descripcionSolucion'] ?? _descripcionSolucion;
+      _fotoCerradoPath = draft['fotoCerradoPath'] ?? _fotoCerradoPath;
+      _fotoCerradoUrl = draft['fotoCerradoUrl'] ?? _fotoCerradoUrl;
+    }
+  });
+}
+
   @override
   void initState() {
     super.initState();
@@ -97,6 +161,7 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
     });
   }
 
+  // Método para cargar datos del usuario actual
   void _loadUserData() {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final userData = authProvider.userData;
@@ -118,6 +183,7 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
     }
   }
 
+  // Método para cargar configuración de interfaz
   void _loadInterfaceConfig() {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final configProvider = Provider.of<InterfaceConfigProvider>(context, listen: false);
@@ -127,6 +193,7 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
     }
   }
 
+  // Método para cargar datos del caso desde Firestore
   void _loadCaseData() {
     final args = ModalRoute.of(context)!.settings.arguments as Map?;
     if (args != null) {
@@ -137,6 +204,7 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
     }
   }
 
+  // Método para cargar datos del caso desde Firestore y actualizar el estado local
   Future<void> _loadFromFirestore() async {
     if (_casoId == null) return;
 
@@ -156,6 +224,7 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
             _fotoAbiertoUrl = estadoAbierto['fotoUrl'];
             _estadoAbiertoGuardado = estadoAbierto['guardado'] ?? false;
             _responsableAbiertoNombre = estadoAbierto['usuarioNombre'] ?? _usuarioNombre;
+            _ubicacionTextoCtrl.text = estadoAbierto['ubicacionTexto'] ?? '';
             
             if (estadoAbierto['firmaBase64'] != null) {
               _firmaAbierto = CameraService.base64ToFirma(estadoAbierto['firmaBase64']);
@@ -178,6 +247,7 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
             }
           }
 
+          // Cargar estado cerrado
           final estadoCerrado = data['estadoCerrado'] as Map<String, dynamic>?;
           if (estadoCerrado != null) {
             _descripcionSolucion = estadoCerrado['descripcionSolucion'] ?? '';
@@ -206,6 +276,7 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
             }
           }
         });
+        await _restoreDraftIfAny();
       }
     } catch (e) {
       if (mounted) {
@@ -216,6 +287,7 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
     }
   }
 
+  // Método para tomar foto, con control de estado para evitar múltiples llamadas simultáneas y validación de requisitos
   Future<void> _tomarFoto({required bool esEstadoAbierto}) async {
     if (_tomandoFoto) return;
     if ((esEstadoAbierto && _estadoAbiertoGuardado) || 
@@ -248,6 +320,7 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
             _ubicacionCerrado = resultado['ubicacion'];
           }
         });
+        _scheduleDraftSave();
       }
     } catch (e) {
       if (mounted) {
@@ -322,6 +395,7 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
         'firmaBase64': _usuarioFirma != null ? CameraService.firmaToBase64(_usuarioFirma!) : null,
         'usuarioId': _usuarioId,
         'usuarioNombre': _usuarioNombre,
+        'ubicacionTexto': _ubicacionTextoCtrl.text.trim(),
         'ubicacion': _ubicacionAbierto != null
             ? {
                 'latitude': _ubicacionAbierto!.latitude,
@@ -464,6 +538,7 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
     final onNivelPeligroChanged = mostrarNivelPeligro ? (String? value) {
       if (value != null) {
         setState(() => _nivelPeligro = value);
+        _scheduleDraftSave();
       }
     } : _nivelPeligroDeshabilitado;
     final onCapturarFirma = habilitarFirmas ? _capturarFirma : _firmaDeshabilitada;
@@ -512,12 +587,18 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
                             firmaUrl: null,
                             bloqueado: _estadoAbiertoGuardado,
                             usuarioNombre: _responsableAbiertoNombre,
+                            ubicacionController: _ubicacionTextoCtrl,
+                            onUbicacionChanged: (value) {
+                              _scheduleDraftSave();
+                            },
                             onDescripcionChanged: (value) {
                               setState(() => _descripcionHallazgo = value);
+                              _scheduleDraftSave();
                             },
                             onnivelPeligroChanged: onNivelPeligroChanged,
                             onRecomendacionesChanged: (value) {
                               setState(() => _recomendacionesControl = value);
+                              _scheduleDraftSave();
                             },
                             onTomarFoto: onTomarFotoAbierto,
                             onCapturarFirma: onCapturarFirma,
@@ -541,6 +622,7 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
                               usuarioNombre: _responsableCerradoNombre,
                               onDescripcionSolucionChanged: (value) {
                                 setState(() => _descripcionSolucion = value);
+                                _scheduleDraftSave();
                               },
                               onTomarFoto: onTomarFotoCerrado,
                               onCapturarFirma: onCapturarFirma,
@@ -684,6 +766,8 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
 
   @override
   void dispose() {
+    _ubicacionTextoCtrl.dispose();
+    _draftDebounce?.cancel();
     _signatureController.dispose();
     super.dispose();
   }

@@ -61,8 +61,13 @@ dependencies:
   # Firmas 
   signature: ^6.3.0
 
+  # PDF
+  pdf: ^3.10.8
+  printing: ^5.11.1
+  
   # Excel 
   excel: ^3.0.0
+  syncfusion_flutter_xlsio: ^29.2.11
   # (opcional) versión más pro con estilos: 
   # syncfusion_flutter_xlsio: ^26.2.11
 

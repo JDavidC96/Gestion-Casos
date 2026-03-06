@@ -20,7 +20,7 @@ class CaseStateCardFirebase extends StatelessWidget {
   final ValueChanged<String?> onnivelPeligroChanged;
   final ValueChanged<String>? onRecomendacionesChanged;
   final ValueChanged<String>? onUbicacionChanged;
-  final String? ubicacionTexto;
+  final TextEditingController? ubicacionController;
   final VoidCallback onTomarFoto;
   final VoidCallback? onCapturarFirma;
   final VoidCallback onGuardar;
@@ -43,7 +43,7 @@ class CaseStateCardFirebase extends StatelessWidget {
     required this.onnivelPeligroChanged,
     this.onRecomendacionesChanged,
     this.onUbicacionChanged,
-    this.ubicacionTexto,
+    required this.ubicacionController,
     required this.onTomarFoto,
     this.onCapturarFirma,
     required this.onGuardar,
@@ -178,9 +178,7 @@ class CaseStateCardFirebase extends StatelessWidget {
         const SizedBox(height: 8),
         TextField(
           onChanged: onUbicacionChanged ?? (value) {},
-          controller: TextEditingController(text: ubicacionTexto ?? '')
-            ..selection = TextSelection.fromPosition(
-                TextPosition(offset: (ubicacionTexto ?? '').length)),
+          controller: ubicacionController,
           maxLines: 2,
           readOnly: bloqueado,
           decoration: InputDecoration(
