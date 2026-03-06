@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../models/case_model.dart';
 import '../models/empresa_model.dart';
 import '../services/firebase_service.dart';
@@ -14,6 +15,7 @@ import '../widgets/empty_cases_state.dart';
 import '../widgets/closed_cases_header.dart';
 import '../widgets/closed_cases_button.dart';
 import '../widgets/configurable_feature.dart';
+import '../services/report_service.dart';
 
 class CaseListScreen extends StatefulWidget {
   const CaseListScreen({super.key});
@@ -198,6 +200,195 @@ class _CaseListScreenState extends State<CaseListScreen> {
     }
   }
 
+    // En case_list_screen.dart, dentro de _CaseListScreenState
+
+void _mostrarDialogoReporteDiario() {
+  // Variables que mantendrán el estado fuera del StatefulBuilder
+  DateTime fechaSeleccionada = DateTime.now();
+  String? supervisorSeleccionado;
+  bool incluirCerrados = true;
+  bool isLoading = false;
+  
+  showDialog(
+    context: context,
+    builder: (context) {
+      return StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('Generar Reporte Diario'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Selector de fecha
+                  ListTile(
+                    title: const Text('Fecha'),
+                    subtitle: Text(DateFormat('dd/MM/yyyy').format(fechaSeleccionada)),
+                    trailing: const Icon(Icons.calendar_today),
+                    onTap: () async {
+                      final DateTime? picked = await showDatePicker(
+                        context: context,
+                        initialDate: fechaSeleccionada, // Usar la fecha seleccionada actual
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime.now(),
+                      );
+                      if (picked != null && picked != fechaSeleccionada) {
+                        // Actualizar la variable y el diálogo
+                        fechaSeleccionada = picked;
+                        setDialogState(() {}); // Forzar rebuild del diálogo
+                      }
+                    },
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // Selector de supervisor
+                  FutureBuilder<List<String>>(
+                    future: _obtenerSupervisores(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      
+                      if (snapshot.hasData) {
+                        final supervisores = snapshot.data!;
+                        return DropdownButtonFormField<String>(
+                          decoration: const InputDecoration(
+                            labelText: 'Supervisor (opcional)',
+                            border: OutlineInputBorder(),
+                          ),
+                          value: supervisorSeleccionado,
+                          items: [
+                            const DropdownMenuItem<String>(
+                              value: null,
+                              child: Text('Todos los supervisores'),
+                            ),
+                            ...supervisores.map((s) => DropdownMenuItem<String>(
+                              value: s,
+                              child: Text(s),
+                            )),
+                          ],
+                          onChanged: (value) {
+                            supervisorSeleccionado = value;
+                            setDialogState(() {}); // Forzar rebuild
+                          },
+                        );
+                      }
+                      
+                      return const Text('Error cargando supervisores');
+                    },
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // Checkbox para incluir cerrados
+                  CheckboxListTile(
+                    title: const Text('Incluir casos cerrados'),
+                    value: incluirCerrados,
+                    onChanged: (value) {
+                      incluirCerrados = value ?? true;
+                      setDialogState(() {}); // Forzar rebuild
+                    },
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: isLoading 
+                  ? null 
+                  : () async {
+                      setDialogState(() => isLoading = true);
+                      
+                      try {
+                        // Obtener todos los casos de la empresa
+                        final snapshot = await FirebaseFirestore.instance
+                            .collection('casos')
+                            .where('empresaId', isEqualTo: _empresaId)
+                            .get();
+                        
+                        // Cerrar el diálogo antes de generar el PDF
+                        Navigator.pop(context);
+                        
+                        await ReportService.generarReporteCasosPDF(
+                          casos: snapshot.docs,
+                          fecha: fechaSeleccionada,
+                          supervisor: supervisorSeleccionado,
+                          incluirCerrados: incluirCerrados,
+                          empresaNombre: _empresa.nombre,
+                          centroNombre: _centroNombre,
+                        );
+                        
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('✅ Reporte generado exitosamente'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        // Si hay error, asegurarse de cerrar el diálogo si aún está abierto
+                        if (Navigator.canPop(context)) {
+                          Navigator.pop(context);
+                        }
+                        
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Error: $e'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      }
+                    },
+                child: isLoading 
+                  ? const SizedBox(
+                      width: 20, 
+                      height: 20, 
+                      child: CircularProgressIndicator(strokeWidth: 2)
+                    )
+                  : const Text('Generar'),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
+
+  // NUEVO MÉTODO 2 - Obtener supervisores
+  Future<List<String>> _obtenerSupervisores() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('casos')
+          .where('empresaId', isEqualTo: _empresaId)
+          .get();
+      
+      final supervisores = <String>{};
+      
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        final estadoAbierto = data['estadoAbierto'] as Map<String, dynamic>?;
+        final nombre = estadoAbierto?['usuarioNombre'] ?? data['usuarioNombre'];
+        if (nombre != null && nombre.isNotEmpty) {
+          supervisores.add(nombre);
+        }
+      }
+      
+      return supervisores.toList()..sort();
+    } catch (e) {
+      print('Error obteniendo supervisores: $e');
+      return [];
+    }
+  }
+
   // Método para determinar si mostrar el nivel de riesgo
   bool _debeMostrarNivelRiesgo(Case caso, InterfaceConfigProvider configProvider) {
     return configProvider.isFeatureEnabled('mostrarNivelRiesgo') && 
@@ -226,6 +417,11 @@ class _CaseListScreenState extends State<CaseListScreen> {
           ],
         ),
         actions: [
+          IconButton(onPressed: _mostrarDialogoReporteDiario,
+           icon: const Icon(Icons.picture_as_pdf),
+           tooltip: 'Generar Reporte Diario',
+           ),
+
           // Información del grupo
           if (authProvider.grupoNombre != null)
             Padding(
@@ -419,8 +615,8 @@ class _CaseListScreenState extends State<CaseListScreen> {
       ),
       floatingActionButton: 
           // Mostrar FAB si tiene permisos Y está habilitado en configuración
-          _puedeCrearCasos(authProvider) && 
-          configProvider.isFeatureEnabled('habilitarCreacionCasos')
+          (_puedeCrearCasos(authProvider) && 
+          configProvider.isFeatureEnabled('habilitarCreacionCasos'))
             ? FloatingActionButton(
                 onPressed: _openAddCaseModal,
                 backgroundColor: Colors.orange,
