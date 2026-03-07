@@ -7,6 +7,7 @@ import 'package:signature/signature.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import 'report_screen.dart';
+import 'package:image_picker/image_picker.dart';
 import '../services/firebase_service.dart';
 import '../services/camera_service.dart';
 import '../providers/auth_provider.dart';
@@ -29,6 +30,8 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
   Map<String, dynamic>? _casoData;
   bool _isLoading = false;
   bool _tomandoFoto = false;
+  bool _subiendoFotoAbierto = false;  // upload Drive en progreso — estado abierto
+  bool _subiendoFotoCerrado = false;  // upload Drive en progreso — estado cerrado
   bool _casoCerrado = false;
   Timer? _draftDebounce;
   bool _draftRestored = false;
@@ -44,6 +47,9 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
   bool _estadoAbiertoGuardado = false;
   String? _responsableAbiertoNombre;
   final TextEditingController _ubicacionTextoCtrl = TextEditingController();
+  // Firma del cliente — estado abierto
+  Uint8List? _firmaClienteAbierto;
+  String? _nombreClienteAbierto;
 
   // Estado Cerrado
   String _descripcionSolucion = '';
@@ -53,6 +59,9 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
   Position? _ubicacionCerrado;
   bool _estadoCerradoGuardado = false;
   String? _responsableCerradoNombre;
+  // Firma del cliente — estado cerrado
+  Uint8List? _firmaClienteCerrado;
+  String? _nombreClienteCerrado;
 
   // Información del usuario actual
   String? _usuarioId;
@@ -104,6 +113,8 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
     'fotoCerradoPath': _fotoCerradoPath,
     'ubicacionTexto': _ubicacionTextoCtrl.text,
     'fotoCerradoUrl': _fotoCerradoUrl,
+    'nombreClienteAbierto': _nombreClienteAbierto,
+    'nombreClienteCerrado': _nombreClienteCerrado,
   };
 }
 
@@ -135,18 +146,26 @@ Future<void> _restoreDraftIfAny() async {
       _descripcionHallazgo = draft['descripcionHallazgo'] ?? _descripcionHallazgo;
       _nivelPeligro = draft['nivelPeligro'] ?? _nivelPeligro;
       final ut = draft['ubicacionTexto'];
-      if (ut != null) {
+      if (ut != null && _ubicacionTextoCtrl.text.isEmpty) {
         _ubicacionTextoCtrl.text = ut;
       }
       _recomendacionesControl = draft['recomendacionesControl'] ?? _recomendacionesControl;
-      _fotoAbiertoPath = draft['fotoAbiertoPath'] ?? _fotoAbiertoPath;
-      _fotoAbiertoUrl = draft['fotoAbiertoUrl'] ?? _fotoAbiertoUrl;
+      // Solo restaurar foto del borrador si Firestore no trajo una URL ya guardada
+      if (_fotoAbiertoUrl == null) {
+        _fotoAbiertoPath = draft['fotoAbiertoPath'] ?? _fotoAbiertoPath;
+        _fotoAbiertoUrl  = draft['fotoAbiertoUrl']  ?? _fotoAbiertoUrl;
+      }
+      _nombreClienteAbierto = draft['nombreClienteAbierto'] ?? _nombreClienteAbierto;
     }
 
     if (!_estadoCerradoGuardado) {
       _descripcionSolucion = draft['descripcionSolucion'] ?? _descripcionSolucion;
-      _fotoCerradoPath = draft['fotoCerradoPath'] ?? _fotoCerradoPath;
-      _fotoCerradoUrl = draft['fotoCerradoUrl'] ?? _fotoCerradoUrl;
+      // Solo restaurar foto del borrador si Firestore no trajo una URL ya guardada
+      if (_fotoCerradoUrl == null) {
+        _fotoCerradoPath = draft['fotoCerradoPath'] ?? _fotoCerradoPath;
+        _fotoCerradoUrl  = draft['fotoCerradoUrl']  ?? _fotoCerradoUrl;
+      }
+      _nombreClienteCerrado = draft['nombreClienteCerrado'] ?? _nombreClienteCerrado;
     }
   });
 }
@@ -225,6 +244,11 @@ Future<void> _restoreDraftIfAny() async {
             _estadoAbiertoGuardado = estadoAbierto['guardado'] ?? false;
             _responsableAbiertoNombre = estadoAbierto['usuarioNombre'] ?? _usuarioNombre;
             _ubicacionTextoCtrl.text = estadoAbierto['ubicacionTexto'] ?? '';
+            _nombreClienteAbierto = estadoAbierto['nombreCliente'];
+            
+            if (estadoAbierto['firmaClienteBase64'] != null) {
+              _firmaClienteAbierto = CameraService.base64ToFirma(estadoAbierto['firmaClienteBase64']);
+            }
             
             if (estadoAbierto['firmaBase64'] != null) {
               _firmaAbierto = CameraService.base64ToFirma(estadoAbierto['firmaBase64']);
@@ -254,6 +278,11 @@ Future<void> _restoreDraftIfAny() async {
             _fotoCerradoUrl = estadoCerrado['fotoUrl'];
             _estadoCerradoGuardado = estadoCerrado['guardado'] ?? false;
             _responsableCerradoNombre = estadoCerrado['usuarioNombre'] ?? _usuarioNombre;
+            _nombreClienteCerrado = estadoCerrado['nombreCliente'];
+
+            if (estadoCerrado['firmaClienteBase64'] != null) {
+              _firmaClienteCerrado = CameraService.base64ToFirma(estadoCerrado['firmaClienteBase64']);
+            }
             
             if (estadoCerrado['firmaBase64'] != null) {
               _firmaCerrado = CameraService.base64ToFirma(estadoCerrado['firmaBase64']);
@@ -306,21 +335,55 @@ Future<void> _restoreDraftIfAny() async {
     setState(() => _tomandoFoto = true);
 
     try {
+      // PASO 1: captura instantánea — la cámara se cierra y vemos la preview
       final resultado = await CameraService.tomarFoto();
-      
-      if (resultado != null && mounted) {
+
+      if (resultado == null || !mounted) return;
+
+      final xFile = resultado['xFile'] as XFile?;
+      if (xFile == null) {
+        print('❌ xFile es null — no se puede subir a Drive');
+        return;
+      }
+
+      setState(() {
+        _tomandoFoto = false;
+        if (esEstadoAbierto) {
+          _fotoAbiertoPath = resultado['fotoPath'];
+          _fotoAbiertoUrl = null;          // aún no tenemos URL
+          _ubicacionAbierto = resultado['ubicacion'];
+          _subiendoFotoAbierto = true;     // activa el loading de upload
+        } else {
+          _fotoCerradoPath = resultado['fotoPath'];
+          _fotoCerradoUrl = null;
+          _ubicacionCerrado = resultado['ubicacion'];
+          _subiendoFotoCerrado = true;
+        }
+      });
+
+      // PASO 2: upload a Drive con loading visible en pantalla
+      final driveUrl = await CameraService.subirFotoADrive(xFile);
+
+      if (!mounted) return;
+
+      if (driveUrl != null) {
         setState(() {
           if (esEstadoAbierto) {
-            _fotoAbiertoPath = resultado['fotoPath'];
-            _fotoAbiertoUrl = resultado['driveUrl'];
-            _ubicacionAbierto = resultado['ubicacion'];
+            _fotoAbiertoUrl = driveUrl;
           } else {
-            _fotoCerradoPath = resultado['fotoPath'];
-            _fotoCerradoUrl = resultado['driveUrl'];
-            _ubicacionCerrado = resultado['ubicacion'];
+            _fotoCerradoUrl = driveUrl;
           }
         });
         _scheduleDraftSave();
+      } else {
+        // Drive falló: la foto se ve pero no se guardará en Firebase
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('⚠️ No se pudo subir la foto al servidor. Intenta de nuevo antes de guardar.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 5),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -330,7 +393,11 @@ Future<void> _restoreDraftIfAny() async {
       }
     } finally {
       if (mounted) {
-        setState(() => _tomandoFoto = false);
+        setState(() {
+          _tomandoFoto = false;
+          _subiendoFotoAbierto = false;
+          _subiendoFotoCerrado = false;
+        });
       }
     }
   }
@@ -378,7 +445,9 @@ Future<void> _restoreDraftIfAny() async {
     }
 
     final habilitarFotos = configProvider.isFeatureEnabled('habilitarFotos');
-    if (habilitarFotos && _fotoAbiertoUrl == null) {
+    // Aceptar foto si existe URL de Drive O path local (Drive puede demorar el redirect)
+    final tieneFotoAbierto = _fotoAbiertoUrl != null || _fotoAbiertoPath != null;
+    if (habilitarFotos && !_estadoAbiertoGuardado && !tieneFotoAbierto) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Agrega una foto del hallazgo")),
       );
@@ -388,6 +457,19 @@ Future<void> _restoreDraftIfAny() async {
     setState(() => _isLoading = true);
 
     try {
+      // Subir firma del cliente a Drive si existe y aún no tiene URL
+      String? firmaClienteUrl;
+      if (_firmaClienteAbierto != null) {
+        try {
+          firmaClienteUrl = await CameraService.subirFirmaADrive(
+            firmaBytes: _firmaClienteAbierto!,
+            nombre: 'firma_cliente_${_casoId}_abierto',
+          );
+        } catch (e) {
+          print('Advertencia: no se pudo subir firma cliente a Drive: $e');
+        }
+      }
+
       final estadoAbiertoData = {
         'descripcionHallazgo': _descripcionHallazgo.trim(),
         'recomendacionesControl': _recomendacionesControl?.trim(),
@@ -404,6 +486,12 @@ Future<void> _restoreDraftIfAny() async {
             : null,
         'guardado': true,
         'fechaGuardado': FieldValue.serverTimestamp(),
+        // Firma del cliente
+        if (_firmaClienteAbierto != null)
+          'firmaClienteBase64': CameraService.firmaToBase64(_firmaClienteAbierto!),
+        if (firmaClienteUrl != null) 'firmaClienteUrl': firmaClienteUrl,
+        if (_nombreClienteAbierto != null && _nombreClienteAbierto!.isNotEmpty)
+          'nombreCliente': _nombreClienteAbierto,
       };
 
       if (mostrarNivelPeligro) {
@@ -465,7 +553,9 @@ Future<void> _restoreDraftIfAny() async {
 
     final configProvider = Provider.of<InterfaceConfigProvider>(context, listen: false);
     final habilitarFotos = configProvider.isFeatureEnabled('habilitarFotos');
-    if (habilitarFotos && _fotoCerradoUrl == null) {
+    // Aceptar foto si existe URL de Drive O path local (Drive puede demorar el redirect)
+    final tieneFotoCerrado = _fotoCerradoUrl != null || _fotoCerradoPath != null;
+    if (habilitarFotos && !_estadoCerradoGuardado && !tieneFotoCerrado) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Agrega una foto de la solución")),
       );
@@ -475,6 +565,19 @@ Future<void> _restoreDraftIfAny() async {
     setState(() => _isLoading = true);
 
     try {
+      // Subir firma del cliente a Drive si existe
+      String? firmaClienteUrl;
+      if (_firmaClienteCerrado != null) {
+        try {
+          firmaClienteUrl = await CameraService.subirFirmaADrive(
+            firmaBytes: _firmaClienteCerrado!,
+            nombre: 'firma_cliente_${_casoId}_cerrado',
+          );
+        } catch (e) {
+          print('Advertencia: no se pudo subir firma cliente a Drive: $e');
+        }
+      }
+
       final estadoCerradoData = {
         'descripcionSolucion': _descripcionSolucion.trim(),
         'fotoUrl': _fotoCerradoUrl,
@@ -489,6 +592,12 @@ Future<void> _restoreDraftIfAny() async {
             : null,
         'guardado': true,
         'fechaGuardado': FieldValue.serverTimestamp(),
+        // Firma del cliente
+        if (_firmaClienteCerrado != null)
+          'firmaClienteBase64': CameraService.firmaToBase64(_firmaClienteCerrado!),
+        if (firmaClienteUrl != null) 'firmaClienteUrl': firmaClienteUrl,
+        if (_nombreClienteCerrado != null && _nombreClienteCerrado!.isNotEmpty)
+          'nombreCliente': _nombreClienteCerrado,
       };
 
       await FirebaseService.updateEstadoCerrado(_casoId!, estadoCerradoData);
@@ -541,9 +650,10 @@ Future<void> _restoreDraftIfAny() async {
         _scheduleDraftSave();
       }
     } : _nivelPeligroDeshabilitado;
-    final onCapturarFirma = habilitarFirmas ? _capturarFirma : _firmaDeshabilitada;
 
-    return Scaffold(
+    return Stack(
+      children: [
+        Scaffold(
       appBar: AppBar(
         title: Text(
           nombre,
@@ -601,9 +711,19 @@ Future<void> _restoreDraftIfAny() async {
                               _scheduleDraftSave();
                             },
                             onTomarFoto: onTomarFotoAbierto,
-                            onCapturarFirma: onCapturarFirma,
                             onGuardar: _guardarEstadoAbierto,
                             tomandoFoto: _tomandoFoto,
+                            subiendoFoto: _subiendoFotoAbierto,
+                            // Firma del cliente
+                            firmaCliente: _firmaClienteAbierto,
+                            nombreCliente: _nombreClienteAbierto,
+                            onFirmaClienteChanged: (bytes) {
+                              setState(() => _firmaClienteAbierto = bytes);
+                            },
+                            onNombreClienteChanged: (value) {
+                              setState(() => _nombreClienteAbierto = value);
+                              _scheduleDraftSave();
+                            },
                           ),
 
                           if (_estadoAbiertoGuardado && !_casoCerrado)
@@ -625,9 +745,19 @@ Future<void> _restoreDraftIfAny() async {
                                 _scheduleDraftSave();
                               },
                               onTomarFoto: onTomarFotoCerrado,
-                              onCapturarFirma: onCapturarFirma,
                               onGuardar: _guardarEstadoCerrado,
                               tomandoFoto: _tomandoFoto,
+                              subiendoFoto: _subiendoFotoCerrado,
+                              // Firma del cliente
+                              firmaCliente: _firmaClienteCerrado,
+                              nombreCliente: _nombreClienteCerrado,
+                              onFirmaClienteChanged: (bytes) {
+                                setState(() => _firmaClienteCerrado = bytes);
+                              },
+                              onNombreClienteChanged: (value) {
+                                setState(() => _nombreClienteCerrado = value);
+                                _scheduleDraftSave();
+                              },
                             ),
 
                           // Botón de generar reporte configurable
@@ -644,6 +774,38 @@ Future<void> _restoreDraftIfAny() async {
                 ],
               ),
             ),
+    ),
+
+        // ── Overlay de carga mientras se sube la foto a Drive ──
+        if (_subiendoFotoAbierto || _subiendoFotoCerrado)
+          Container(
+            color: Colors.black54,
+            child: Center(
+              child: Card(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircularProgressIndicator(),
+                      const SizedBox(height: 20),
+                      const Text(
+                        'Subiendo foto al servidor...',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Por favor espera, no cierres la pantalla',
+                        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 

@@ -1,8 +1,6 @@
 // lib/screens/report_screen.dart
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import '../services/firebase_service.dart';
-import '../providers/auth_provider.dart';
 import '../models/case_model.dart';
 import '../services/pdf_service.dart';
 
@@ -18,7 +16,7 @@ class _ReportScreenState extends State<ReportScreen> {
   bool _isGenerating = false;
   Map<String, dynamic>? _casoData;
   Case? _casoObjeto;
-  String? _grupoNombre;
+  
   bool _isLoading = true;
 
   @override
@@ -29,8 +27,6 @@ class _ReportScreenState extends State<ReportScreen> {
   }
 
   Future<void> _loadInitialData() async {
-    final auth = Provider.of<AuthProvider>(context, listen: false);
-    _grupoNombre = auth.grupoNombre;
     
     String? id = widget.casoId;
     if (id == null) {

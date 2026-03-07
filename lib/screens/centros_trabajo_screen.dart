@@ -8,6 +8,7 @@ import '../services/firebase_service.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/centro_trabajo_card.dart';
 import '../widgets/centro_trabajo_form_dialog_firebase.dart';
+import '../services/report_service.dart';
 
 class CentrosTrabajoScreen extends StatefulWidget {
   const CentrosTrabajoScreen({super.key});
@@ -111,6 +112,229 @@ class _CentrosTrabajoScreenState extends State<CentrosTrabajoScreen> {
     );
   }
 
+  // En centros_trabajo_screen.dart, dentro de _CentrosTrabajoScreenState
+
+void _mostrarDialogoReporteMensual() {
+  DateTime now = DateTime.now();
+  int mesSeleccionado = now.month;
+  int anioSeleccionado = now.year;
+  String? supervisorSeleccionado;
+  bool incluirCerrados = true;
+  bool isLoading = false;
+  
+  showDialog(
+    context: context,
+    builder: (context) {
+      return StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('Reporte Mensual por Centros'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Selector de mes y año
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          decoration: const InputDecoration(labelText: 'Mes'),
+                          value: mesSeleccionado,
+                          items: List.generate(12, (index) {
+                            final mes = index + 1;
+                            return DropdownMenuItem<int>(
+                              value: mes,
+                              child: Text(_getNombreMes(mes)),
+                            );
+                          }),
+                          onChanged: (value) {
+                            if (value != null) {
+                              mesSeleccionado = value;
+                              setDialogState(() {});
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          decoration: const InputDecoration(labelText: 'Año'),
+                          value: anioSeleccionado,
+                          items: List.generate(5, (index) {
+                            final anio = now.year - index;
+                            return DropdownMenuItem<int>(
+                              value: anio,
+                              child: Text(anio.toString()),
+                            );
+                          }),
+                          onChanged: (value) {
+                            if (value != null) {
+                              anioSeleccionado = value;
+                              setDialogState(() {});
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // Selector de supervisor
+                  FutureBuilder<List<String>>(
+                    future: _obtenerSupervisores(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      
+                      if (snapshot.hasData) {
+                        return DropdownButtonFormField<String>(
+                          decoration: const InputDecoration(
+                            labelText: 'Supervisor (opcional)',
+                            border: OutlineInputBorder(),
+                          ),
+                          value: supervisorSeleccionado,
+                          items: [
+                            const DropdownMenuItem<String>(
+                              value: null,
+                              child: Text('Todos los supervisores'),
+                            ),
+                            ...snapshot.data!.map((s) => DropdownMenuItem<String>(
+                              value: s,
+                              child: Text(s),
+                            )),
+                          ],
+                          onChanged: (value) {
+                            supervisorSeleccionado = value;
+                            setDialogState(() {});
+                          },
+                        );
+                      }
+                      
+                      return const Text('Error cargando supervisores');
+                    },
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // Checkbox para incluir cerrados
+                  CheckboxListTile(
+                    title: const Text('Incluir casos cerrados'),
+                    value: incluirCerrados,
+                    onChanged: (value) {
+                      incluirCerrados = value ?? true;
+                      setDialogState(() {});
+                    },
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: isLoading 
+                  ? null 
+                  : () async {
+                      setDialogState(() => isLoading = true);
+                      
+                      try {
+                        // Obtener todos los casos de la empresa
+                        final snapshot = await FirebaseFirestore.instance
+                            .collection('casos')
+                            .where('empresaId', isEqualTo: _empresaId)
+                            .get();
+                        
+                        // Agrupar casos por centro
+                        final casosPorCentro = <String, List<QueryDocumentSnapshot>>{};
+                        
+                        for (var doc in snapshot.docs) {
+                          final data = doc.data();
+                          final fechaCreacion = (data['fechaCreacion'] as Timestamp?)?.toDate();
+                          
+                          if (fechaCreacion == null) continue;
+                          
+                          // Filtrar por mes y año
+                          if (fechaCreacion.month == mesSeleccionado && 
+                              fechaCreacion.year == anioSeleccionado) {
+                            
+                            // Filtrar por supervisor si se especificó
+                            if (supervisorSeleccionado != null && supervisorSeleccionado!.isNotEmpty) {
+                              final estadoAbierto = data['estadoAbierto'] as Map<String, dynamic>?;
+                              final usuarioNombre = estadoAbierto?['usuarioNombre'] ?? data['usuarioNombre'];
+                              if (usuarioNombre != supervisorSeleccionado) continue;
+                            }
+                            
+                            // Filtrar por estado si no se incluyen cerrados
+                            if (!incluirCerrados && data['cerrado'] == true) continue;
+                            
+                            final centroNombre = data['centroNombre'] ?? 'Sin centro';
+                            
+                            if (!casosPorCentro.containsKey(centroNombre)) {
+                              casosPorCentro[centroNombre] = [];
+                            }
+                            casosPorCentro[centroNombre]!.add(doc);
+                          }
+                        }
+                        
+                        // Cerrar el diálogo
+                        Navigator.pop(context);
+                        
+                        if (casosPorCentro.isEmpty) {
+                          throw Exception('No hay casos para el período seleccionado');
+                        }
+                        
+                        await ReportService.generarReporteMensualCentrosPDF(
+                          casosPorCentro: casosPorCentro,
+                          mes: mesSeleccionado,
+                          anio: anioSeleccionado,
+                          supervisor: supervisorSeleccionado,
+                          incluirCerrados: incluirCerrados,
+                          empresaNombre: _empresa?.nombre ?? 'Empresa',
+                        );
+                        
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('✅ Reporte mensual generado exitosamente'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (Navigator.canPop(context)) {
+                          Navigator.pop(context);
+                        }
+                        
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Error: $e'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      }
+                    },
+                child: isLoading 
+                  ? const SizedBox(
+                      width: 20, 
+                      height: 20, 
+                      child: CircularProgressIndicator(strokeWidth: 2)
+                    )
+                  : const Text('Generar'),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
+
   void _mostrarFormularioCentro([String? centroId, Map<String, dynamic>? centroData]) {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     
@@ -165,6 +389,37 @@ class _CentrosTrabajoScreenState extends State<CentrosTrabajoScreen> {
     );
   }
 
+  String _getNombreMes(int mes) {
+    const meses = [
+      'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+      'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+    ];
+    return meses[mes - 1];
+  }
+
+  Future<List<String>> _obtenerSupervisores() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('casos')
+          .where('empresaId', isEqualTo: _empresaId)
+          .get();
+      
+      final supervisores = <String>{};
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        final estadoAbierto = data['estadoAbierto'] as Map<String, dynamic>?;
+        final usuarioNombre = estadoAbierto?['usuarioNombre'] ?? data['usuarioNombre'];
+        if (usuarioNombre != null) {
+          supervisores.add(usuarioNombre);
+        }
+      }
+      return supervisores.toList()..sort();
+    } catch (e) {
+      print('Error obteniendo supervisores: $e');
+      return [];
+    }
+  }
+
   String _getAppBarTitle() {
     return 'Centros - ${_empresa?.nombre ?? "Cargando..."}';
   }
@@ -216,6 +471,13 @@ class _CentrosTrabajoScreenState extends State<CentrosTrabajoScreen> {
           ],
         ),
         actions: [
+
+          IconButton(
+          icon: const Icon(Icons.picture_as_pdf),
+          onPressed: _mostrarDialogoReporteMensual,
+          tooltip: 'Generar reporte mensual por centros',
+        ),
+
           if (authProvider.grupoNombre != null)
             Padding(
               padding: const EdgeInsets.only(right: 8.0),

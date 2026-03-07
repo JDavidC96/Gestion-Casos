@@ -10,42 +10,30 @@ class CameraService {
   static final ImagePicker _picker = ImagePicker();
   
   // URL de tu Google Apps Script
-  static const String _scriptUrl = 'https://script.google.com/macros/s/AKfycbysQi3O-gCX_whDHg0Qq6XiUQ1eqmHUl6xHUIMLFRf5Uwi7uLDzqLzLoBM9H979a8KI/exec';
+  static const String _scriptUrl = 'https://script.google.com/macros/s/AKfycbyEnp9do9mJT_90v7__UopJB0ne0ZpCHwXQyvG9DUN5I5j3LWN9heOt_2ief8o9iodu/exec';
 
-  /// Tomar foto con cámara y subirla a Google Drive
+  /// PASO 1: Solo captura la foto y la ubicación. NO sube a Drive.
+  /// Retorna inmediatamente para que la UI pueda mostrar la preview.
   static Future<Map<String, dynamic>?> tomarFoto() async {
     try {
-      // Obtener ubicación primero
       final Position? ubicacion = await GeolocationService.obtenerUbicacion();
-      
-      // Tomar foto
+
       final XFile? foto = await _picker.pickImage(
         source: ImageSource.camera,
         preferredCameraDevice: CameraDevice.rear,
-        imageQuality: 90,
+        imageQuality: 40,   // reducido para no superar el límite de 1MB de Apps Script
+        maxWidth: 1280,
+        maxHeight: 1280,
       );
 
       if (foto != null) {
         print('📸 Foto capturada: ${foto.path}');
-        
-        // Subir a Google Drive
-        String? driveUrl;
-        try {
-          driveUrl = await _subirArchivo(
-            archivo: foto,
-            projectId: 'fotos_casos',
-            tipo: 'foto',
-          );
-          print('✅ URL generada: $driveUrl');
-        } catch (e) {
-          print('⚠️ Error subiendo a Drive: $e');
-        }
-
         return {
           'fotoPath': foto.path,
           'ubicacion': ubicacion,
-          'driveUrl': driveUrl,
+          'driveUrl': null, // se rellena en subirFotoADrive()
           'fecha': DateTime.now(),
+          'xFile': foto,   // pasamos el XFile para subirlo después
         };
       }
     } catch (e) {
@@ -53,6 +41,23 @@ class CameraService {
       rethrow;
     }
     return null;
+  }
+
+  /// PASO 2: Sube el XFile capturado a Google Drive y devuelve la URL.
+  /// Llamar justo después de tomarFoto(), mostrando un loading en la UI.
+  static Future<String?> subirFotoADrive(XFile foto) async {
+    try {
+      final String? url = await _subirArchivo(
+        archivo: foto,
+        projectId: 'fotos_casos',
+        tipo: 'foto',
+      );
+      print('✅ URL generada: $url');
+      return url;
+    } catch (e) {
+      print('⚠️ Error subiendo foto a Drive: $e');
+      return null;
+    }
   }
 
   /// Convertir firma a base64
@@ -72,13 +77,9 @@ class CameraService {
     required String tipo,
   }) async {
     try {
-      // Leer archivo como bytes
       final List<int> bytes = await archivo.readAsBytes();
-      
-      // Convertir a base64
       final String base64String = base64Encode(bytes);
-      
-      // Preparar datos para enviar
+
       final Map<String, dynamic> requestData = {
         'projectId': projectId,
         'base64': base64String,
@@ -87,10 +88,8 @@ class CameraService {
         'tipo': tipo,
       };
 
-      print('📤 Subiendo archivo a Drive...');
-      print('   Tamaño: ${bytes.length} bytes');
+      print('📤 Subiendo archivo a Drive... (raw: ${bytes.length} bytes, base64: ${base64String.length} chars)');
 
-      // Enviar a Google Apps Script con headers adicionales
       final response = await http.post(
         Uri.parse(_scriptUrl),
         headers: {
@@ -101,109 +100,151 @@ class CameraService {
         body: jsonEncode(requestData),
       ).timeout(const Duration(seconds: 60));
 
-      print('📦 Respuesta - Status: ${response.statusCode}');
+      print('📦 Status: ${response.statusCode}');
+      print('📦 Body preview: ${response.body.substring(0, response.body.length.clamp(0, 300))}');
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final Map<String, dynamic> responseData = jsonDecode(response.body);
-        
-        if (responseData['success'] == true) {
-          final url = responseData['url'];
-          print('✅ URL de Drive: $url');
-          return url;
-        } else {
-          print('❌ Error en respuesta: ${responseData['error']}');
-          return null;
-        }
-      } else if (response.statusCode == 302 || response.statusCode == 301) {
-        // MANEJO DE REDIRECT
-        print('🔄 Redirect detectado (${response.statusCode}), extrayendo URL...');
-        
-        final redirectMatch = RegExp(r'HREF="([^"]+)"').firstMatch(response.body);
-        if (redirectMatch != null) {
-          var redirectUrl = redirectMatch.group(1)?.replaceAll('&amp;', '&');
-          print('🔗 URL de redirect encontrada');
-          
-          if (redirectUrl != null) {
-            try {
-              print('📥 Siguiendo redirect...');
-              final redirectResponse = await http.get(
-                Uri.parse(redirectUrl),
-                headers: {
-                  'User-Agent': 'Mozilla/5.0',
-                  'Accept': 'application/json',
-                }
-              ).timeout(const Duration(seconds: 30));
-              
-              print('📦 Respuesta después de redirect - Status: ${redirectResponse.statusCode}');
-              
-              if (redirectResponse.statusCode == 200) {
-                try {
-                  final Map<String, dynamic> responseData = jsonDecode(redirectResponse.body);
-                  final String? driveUrl = responseData['url'];
-                  
-                  if (driveUrl != null && driveUrl.isNotEmpty) {
-                    print('✅ Archivo subido exitosamente vía redirect!');
-                    print('   URL: $driveUrl');
-                    return driveUrl;
-                  } else {
-                    print('⚠️ Respuesta JSON sin URL');
-                    print('   Response: ${responseData.toString()}');
-                  }
-                } catch (jsonError) {
-                  print('❌ Error parseando JSON: $jsonError');
-                  final bodyPreview = redirectResponse.body.length > 500 
-                      ? redirectResponse.body.substring(0, 500) 
-                      : redirectResponse.body;
-                  print('   Body: $bodyPreview');
-                }
-              } else {
-                print('❌ Error en redirect response: ${redirectResponse.statusCode}');
-              }
-            } catch (redirectError) {
-              print('❌ Error siguiendo redirect: $redirectError');
-            }
-          }
-        } else {
-          print('❌ No se pudo extraer URL de redirect del HTML');
-        }
-        
-        return null;
-      } else {
-        print('❌ Error HTTP ${response.statusCode}');
-        final bodyPreview = response.body.length > 200 
-            ? response.body.substring(0, 200) 
-            : response.body;
-        print('   Body: $bodyPreview');
-        return null;
+      // Intentar parsear JSON primero sin importar el status code
+      final String? urlFromJson = _extraerUrlDeJson(response.body);
+      if (urlFromJson != null) {
+        print('✅ URL obtenida del body JSON: $urlFromJson');
+        return urlFromJson;
       }
+
+      // Si hay redirect, seguirlo
+      if (response.statusCode == 302 || response.statusCode == 301) {
+        print('🔄 Redirect detectado (${response.statusCode})');
+
+        // Intentar extraer URL del HTML del redirect
+        final redirectUrl = _extraerRedirectUrl(response.body);
+        print('🔗 URL de redirect: $redirectUrl');
+
+        if (redirectUrl != null) {
+          final redirectResponse = await http.get(
+            Uri.parse(redirectUrl),
+            headers: {'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'},
+          ).timeout(const Duration(seconds: 30));
+
+          print('📦 Redirect status: ${redirectResponse.statusCode}');
+          print('📦 Redirect body: ${redirectResponse.body.substring(0, redirectResponse.body.length.clamp(0, 300))}');
+
+          final String? urlFromRedirect = _extraerUrlDeJson(redirectResponse.body);
+          if (urlFromRedirect != null) {
+            print('✅ URL obtenida del redirect: $urlFromRedirect');
+            return urlFromRedirect;
+          }
+        }
+      }
+
+      print('❌ No se pudo obtener URL de Drive');
+      return null;
     } catch (e) {
       print('❌ Error en _subirArchivo: $e');
       return null;
     }
   }
 
-  /// Seleccionar foto de galería
+  /// Intenta extraer la URL del campo 'url' de un JSON. Retorna null si falla.
+  static String? _extraerUrlDeJson(String body) {
+    try {
+      // Limpiar posibles caracteres extra al inicio/fin
+      final trimmed = body.trim();
+      if (!trimmed.startsWith('{')) return null;
+      final Map<String, dynamic> data = jsonDecode(trimmed);
+      final url = data['url'];
+      if (url != null && url.toString().isNotEmpty) return url.toString();
+    } catch (_) {}
+    return null;
+  }
+
+  /// Extrae la URL de redirect del HTML del Apps Script (patrón HREF="...")
+  static String? _extraerRedirectUrl(String html) {
+    // Patrón principal: HREF="..."
+    final match1 = RegExp(r'HREF="([^"]+)"', caseSensitive: false).firstMatch(html);
+    if (match1 != null) return match1.group(1)?.replaceAll('&amp;', '&');
+    // Patrón alternativo: href="..."
+    final match2 = RegExp(r"href='([^']+)'", caseSensitive: false).firstMatch(html);
+    if (match2 != null) return match2.group(1)?.replaceAll('&amp;', '&');
+    return null;
+  }
+
+  /// Subir firma del cliente (bytes PNG) a Google Drive
+  static Future<String?> subirFirmaADrive({
+    required Uint8List firmaBytes,
+    required String nombre,
+  }) async {
+    try {
+      final String base64String = base64Encode(firmaBytes);
+
+      final Map<String, dynamic> requestData = {
+        'projectId': 'fotos_casos',
+        'base64': base64String,
+        'mimeType': 'image/png',
+        'name': '${nombre}_${DateTime.now().millisecondsSinceEpoch}.png',
+        'tipo': 'firma_cliente',
+      };
+
+      print('📤 Subiendo firma cliente a Drive...');
+
+      final response = await http.post(
+        Uri.parse(_scriptUrl),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0',
+        },
+        body: jsonEncode(requestData),
+      ).timeout(const Duration(seconds: 60));
+
+      // Intentar JSON directo
+      final urlFromJson = _extraerUrlDeJson(response.body);
+      if (urlFromJson != null) {
+        print('✅ Firma subida: $urlFromJson');
+        return urlFromJson;
+      }
+
+      // Seguir redirect si aplica
+      if (response.statusCode == 302 || response.statusCode == 301) {
+        final redirectUrl = _extraerRedirectUrl(response.body);
+        if (redirectUrl != null) {
+          final redirectResponse = await http.get(
+            Uri.parse(redirectUrl),
+            headers: {'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'},
+          ).timeout(const Duration(seconds: 30));
+          final urlFromRedirect = _extraerUrlDeJson(redirectResponse.body);
+          if (urlFromRedirect != null) {
+            print('✅ Firma subida vía redirect: $urlFromRedirect');
+            return urlFromRedirect;
+          }
+        }
+      }
+
+      print('⚠️ No se pudo subir la firma cliente');
+      return null;
+    } catch (e) {
+      print('❌ Error subiendo firma cliente: $e');
+      return null;
+    }
+  }
+
+  /// PASO 1 (galería): Solo selecciona la foto. NO sube a Drive.
   static Future<Map<String, dynamic>?> seleccionarFotoGaleria() async {
     try {
       final Position? ubicacion = await GeolocationService.obtenerUbicacion();
-      
+
       final XFile? foto = await _picker.pickImage(
         source: ImageSource.gallery,
-        imageQuality: 90,
+        imageQuality: 40,
+        maxWidth: 1280,
+        maxHeight: 1280,
       );
 
       if (foto != null) {
-        final String? driveUrl = await _subirArchivo(
-          archivo: foto,
-          projectId: 'fotos_casos',
-          tipo: 'foto_galeria',
-        );
-
         return {
           'fotoPath': foto.path,
           'ubicacion': ubicacion,
-          'driveUrl': driveUrl,
+          'driveUrl': null,
           'fecha': DateTime.now(),
+          'xFile': foto,
         };
       }
     } catch (e) {
