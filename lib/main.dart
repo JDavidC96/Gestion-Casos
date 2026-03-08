@@ -6,7 +6,6 @@ import './providers/auth_provider.dart';
 import './providers/case_provider.dart';
 import './providers/centro_trabajo_provider.dart';
 import './providers/interface_config_provider.dart';
-import './screens/splash_screen.dart';
 import './screens/login_screen.dart';
 import './screens/forgot_password_screen.dart';
 import './screens/super_admin_screen.dart';
@@ -21,6 +20,7 @@ import './screens/interface_config_screen.dart';
 import 'firebase_options.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import './services/case_draft_service.dart';
+import './screens/login_success_animation.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -51,9 +51,9 @@ class GestionCasosApp extends StatelessWidget {
           primarySwatch: Colors.blue,
           useMaterial3: true,
         ),
-        initialRoute: '/splash',
+        initialRoute: '/loginSuccess',
         routes: {
-          '/splash': (_) => const SplashScreen(),
+          '/loginSuccess': (_) => const LoginSuccessAnimation(),
           '/interface_config': (_) => const InterfaceConfigScreen(),
           '/login': (_) => const LoginScreen(),
           '/forgot_password': (_) => const ForgotPasswordScreen(),

@@ -135,9 +135,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       children: [
                         // Logo SafeGestion en lugar del icono de usuario
                         Image.asset(
-                          'assets/images/SafeGestionLogo.png',
-                          height: 100,
-                          width: 100,
+                          'assets/images/SafeGestion.png',
+                          height: 180,
+                          width: 180,
                           errorBuilder: (context, error, stackTrace) {
                             return const Icon(
                               Icons.account_circle,
@@ -146,15 +146,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             );
                           },
                         ),
-                        const SizedBox(height: 20),
-                        const Text(
-                          "SafeGestion",
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        
                         const SizedBox(height: 40),
 
                         // Campo de correo/usuario
