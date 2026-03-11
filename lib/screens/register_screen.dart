@@ -1,9 +1,13 @@
 // lib/screens/register_screen.dart
+import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:signature/signature.dart';
 import '../providers/auth_provider.dart' as my_auth;
+import '../services/camera_service.dart';
 
 class RegisterScreen extends StatefulWidget {
   final Map<String, dynamic>? googleUserData;
@@ -19,25 +23,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _cedulaController = TextEditingController();
   final _nombreController = TextEditingController();
   final _emailController = TextEditingController();
-  final _firmaController = TextEditingController();
   final _grupoIdController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  
-  // Campos para nuevo grupo
-  final _nuevoGrupoNombreController = TextEditingController();
-  final _nuevoGrupoEmpresaController = TextEditingController();
-  final _nuevoGrupoTelefonoController = TextEditingController();
-  final _nuevoGrupoDireccionController = TextEditingController();
 
-  String _selectedRole = 'user';
-  bool _crearNuevoGrupo = false;
+  // Firma
+  late final SignatureController _signatureController;
+  Uint8List? _firmaBytes;
+  bool _firmaVacia = false; // para mostrar error de validación
+
   bool _isLoading = false;
   bool _buscandoGrupo = false;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   String? _grupoEncontradoNombre;
   String? _grupoEncontradoId;
+  Timer? _debounceTimer;
+  bool _busquedaRealizada = false; // solo mostrar "no encontrado" tras buscar
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   bool _isGoogleRegistration = false;
@@ -45,6 +47,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   void initState() {
     super.initState();
+    _signatureController = SignatureController(
+      penStrokeWidth: 3,
+      penColor: Colors.black,
+      exportBackgroundColor: Colors.white,
+    );
     _isGoogleRegistration = widget.googleUserData != null;
     _prefillGoogleData();
   }
@@ -59,27 +66,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _cedulaController.dispose();
     _nombreController.dispose();
     _emailController.dispose();
-    _firmaController.dispose();
+    _signatureController.dispose();
     _grupoIdController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
-    _nuevoGrupoNombreController.dispose();
-    _nuevoGrupoEmpresaController.dispose();
-    _nuevoGrupoTelefonoController.dispose();
-    _nuevoGrupoDireccionController.dispose();
     super.dispose();
   }
 
   // Método para buscar grupo en Firestore
   Future<void> _buscarGrupo(String grupoId) async {
-    if (grupoId.isEmpty) {
+    final idLimpio = grupoId.trim();
+
+    if (idLimpio.isEmpty) {
       setState(() {
         _grupoEncontradoNombre = null;
         _grupoEncontradoId = null;
         _buscandoGrupo = false;
+        _busquedaRealizada = false;
       });
       return;
     }
@@ -88,67 +95,47 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _buscandoGrupo = true;
       _grupoEncontradoNombre = null;
       _grupoEncontradoId = null;
+      _busquedaRealizada = false;
     });
 
     try {
-      final doc = await _firestore.collection('grupos').doc(grupoId).get();
-      
-      if (doc.exists && mounted) {
+      final doc = await _firestore.collection('grupos').doc(idLimpio).get();
+
+      if (!mounted) return;
+
+      if (doc.exists) {
         setState(() {
           _grupoEncontradoNombre = doc.data()?['nombre'] ?? 'Sin nombre';
-          _grupoEncontradoId = grupoId;
+          _grupoEncontradoId = idLimpio;
           _buscandoGrupo = false;
+          _busquedaRealizada = true;
         });
-      } else if (mounted) {
+      } else {
         setState(() {
           _grupoEncontradoNombre = null;
           _grupoEncontradoId = null;
           _buscandoGrupo = false;
+          _busquedaRealizada = true;
         });
       }
     } catch (e) {
+      print('❌ Error buscando grupo: $e');
       if (mounted) {
         setState(() {
           _grupoEncontradoNombre = null;
           _grupoEncontradoId = null;
           _buscandoGrupo = false;
+          _busquedaRealizada = true;
         });
       }
     }
   }
 
-  // Método para enviar correo real
-  Future<void> _enviarCorreoNuevoGrupo() async {
-    try {
-      await _firestore.collection('solicitudes_grupos').add({
-        'nombreGrupo': _nuevoGrupoNombreController.text.trim(),
-        'nombreEmpresa': _nuevoGrupoEmpresaController.text.trim(),
-        'telefono': _nuevoGrupoTelefonoController.text.trim(),
-        'direccion': _nuevoGrupoDireccionController.text.trim(),
-        'usuarioSolicitante': {
-          'cedula': _cedulaController.text.trim(),
-          'nombre': _nombreController.text.trim(),
-          'email': _emailController.text.trim(),
-          'rol': _selectedRole,
-        },
-        'fechaSolicitud': FieldValue.serverTimestamp(),
-        'estado': 'pendiente',
-        'emailDestino': 'covaret.tech@gmail.com',
-      });
-
-      print('Solicitud de nuevo grupo guardada en Firestore');
-      
-    } catch (e) {
-      print('Error enviando solicitud de grupo: $e');
-      throw e;
-    }
-  }
-
   // Método para registrar usuario en Firebase
-  Future<void> _registrarUsuario() async {
+  Future<void> _registrarUsuario({String? firmaUrl}) async {
     try {
       if (_isGoogleRegistration) {
-        // Registro con Google
+        // Registro con Google — firmaUrl ya se subió antes de llamar aquí
         final authProvider = Provider.of<my_auth.AuthProvider>(context, listen: false);
         final user = widget.googleUserData!['user'] as User;
         
@@ -157,10 +144,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
           _cedulaController.text.trim(),
           _nombreController.text.trim(),
           _emailController.text.trim(),
-          _firmaController.text.trim(),
+          firmaUrl,
           _grupoEncontradoId,
           _grupoEncontradoNombre,
-          _selectedRole,
+          'inspector',
         );
 
         if (!success) {
@@ -173,15 +160,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
           _passwordController.text,
         );
 
-        // Guardar datos adicionales en Firestore
+        // Guardar datos adicionales en Firestore (solo firmaUrl, sin base64)
         await _firestore.collection('users').doc(user.uid).set({
           'cedula': _cedulaController.text.trim(),
           'displayName': _nombreController.text.trim(),
           'email': _emailController.text.trim(),
-          'firmaBase64': _firmaController.text.trim(),
+          if (firmaUrl != null) 'firmaUrl': firmaUrl,
           'grupoId': _grupoEncontradoId,
           'grupoNombre': _grupoEncontradoNombre,
-          'role': _selectedRole,
+          'role': 'inspector',
           'createdAt': FieldValue.serverTimestamp(),
           'uid': user.uid,
         });
@@ -207,10 +194,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<void> _handleRegister() async {
+    // Validar firma antes del form
+    if (_signatureController.isEmpty) {
+      setState(() => _firmaVacia = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('La firma es obligatoria'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    setState(() => _firmaVacia = false);
+
     if (!_formKey.currentState!.validate()) return;
 
-    // Validación adicional para grupo
-    if (!_crearNuevoGrupo && _grupoEncontradoId == null) {
+    // Validación de grupo
+    if (_grupoEncontradoId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Debe buscar y validar un grupo existente'),
@@ -220,56 +220,44 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() { _isLoading = true; });
 
     try {
-      if (_crearNuevoGrupo) {
-        // Enviar correo para nuevo grupo
-        await _enviarCorreoNuevoGrupo();
-        
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Solicitud de nuevo grupo enviada. Te contactaremos pronto.'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
+      // Capturar bytes de la firma
+      _firmaBytes = await _signatureController.toPngBytes();
 
-        // Para nuevo grupo, volver con false (no completó registro completo)
-        if (mounted) {
-          Future.delayed(const Duration(seconds: 3), () {
+      // Subir firma a Drive
+      String? firmaUrl;
+      if (_firmaBytes != null) {
+        try {
+          final cedulaId = _cedulaController.text.trim();
+          firmaUrl = await CameraService.subirFirmaADrive(
+            firmaBytes: _firmaBytes!,
+            nombre: 'firma_registro_$cedulaId',
+          );
+        } catch (e) {
+          print('Advertencia: no se pudo subir firma a Drive: $e');
+        }
+      }
+
+      await _registrarUsuario(firmaUrl: firmaUrl);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_isGoogleRegistration
+                ? 'Registro con Google completado exitosamente.'
+                : 'Usuario registrado exitosamente.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Future.delayed(const Duration(seconds: 2), () {
+          if (_isGoogleRegistration) {
+            Navigator.of(context).pop(true);
+          } else {
             Navigator.of(context).pop(false);
-          });
-        }
-
-      } else {
-        // Registrar usuario en grupo existente
-        await _registrarUsuario();
-        
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(_isGoogleRegistration 
-                  ? 'Registro con Google completado exitosamente.'
-                  : 'Usuario registrado exitosamente.'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-
-        // Devolver true si el registro se completó exitosamente
-        if (mounted) {
-          Future.delayed(const Duration(seconds: 3), () {
-            if (_isGoogleRegistration) {
-              Navigator.of(context).pop(true);
-            } else {
-              Navigator.of(context).pop(false);
-            }
-          });
-        }
+          }
+        });
       }
 
     } catch (e) {
@@ -288,24 +276,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
         });
       }
     }
-  }
-
-  void _toggleNuevoGrupo(bool? value) {
-    setState(() {
-      _crearNuevoGrupo = value ?? false;
-      if (!_crearNuevoGrupo) {
-        // Limpiar campos de nuevo grupo cuando se desactiva
-        _nuevoGrupoNombreController.clear();
-        _nuevoGrupoEmpresaController.clear();
-        _nuevoGrupoTelefonoController.clear();
-        _nuevoGrupoDireccionController.clear();
-      } else {
-        // Limpiar búsqueda de grupo cuando se activa nuevo grupo
-        _grupoIdController.clear();
-        _grupoEncontradoNombre = null;
-        _grupoEncontradoId = null;
-      }
-    });
   }
 
   // Validación de contraseña segura (solo para registro normal)
@@ -527,182 +497,80 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           const SizedBox(height: 16),
                         ],
 
-                        // Campo Firma
-                        TextFormField(
-                          controller: _firmaController,
-                          decoration: InputDecoration(
-                            labelText: "Firma",
-                            prefixIcon: const Icon(Icons.draw),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
+                        // Campo Firma (obligatorio)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.draw, color: Color(0xFF43CEA2)),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  "Firma *",
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const Spacer(),
+                                TextButton.icon(
+                                  onPressed: () {
+                                    _signatureController.clear();
+                                    setState(() => _firmaVacia = false);
+                                  },
+                                  icon: const Icon(Icons.refresh, size: 18),
+                                  label: const Text("Limpiar"),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
                             ),
-                            hintText: "Base64 de la firma (opcional)",
-                          ),
+                            const SizedBox(height: 4),
+                            Container(
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color: _firmaVacia ? Colors.red : Colors.grey.shade400,
+                                  width: _firmaVacia ? 2 : 1,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                                color: Colors.white,
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Signature(
+                                  controller: _signatureController,
+                                  height: 160,
+                                  backgroundColor: Colors.white,
+                                ),
+                              ),
+                            ),
+                            if (_firmaVacia)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 6, left: 12),
+                                child: Text(
+                                  'La firma es obligatoria',
+                                  style: TextStyle(
+                                    color: Colors.red[700],
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            const SizedBox(height: 4),
+                            Text(
+                              "Dibuje su firma en el recuadro",
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 16),
 
-                        // Selección de Rol
-                        DropdownButtonFormField<String>(
-                          value: _selectedRole,
-                          decoration: InputDecoration(
-                            labelText: "Rol *",
-                            prefixIcon: const Icon(Icons.manage_accounts),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          items: const [
-                            DropdownMenuItem(
-                              value: 'user',
-                              child: Text('Empleado'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'admin',
-                              child: Text('Administrador'),
-                            ),
-                          ],
-                          onChanged: (value) {
-                            setState(() {
-                              _selectedRole = value!;
-                            });
-                          },
-                          validator: (value) {
-                            if (value == null) {
-                              return 'Seleccione un rol';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 24),
-
-                        // Opción para nuevo grupo
-                        Card(
-                          elevation: 2,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            side: BorderSide(
-                              color: _crearNuevoGrupo 
-                                  ? const Color(0xFF43CEA2) 
-                                  : Colors.grey.shade300,
-                            ),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Checkbox(
-                                      value: _crearNuevoGrupo,
-                                      onChanged: _toggleNuevoGrupo,
-                                      activeColor: const Color(0xFF43CEA2),
-                                    ),
-                                    const Expanded(
-                                      child: Text(
-                                        "Mi empresa no está registrada",
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                if (_crearNuevoGrupo) ...[
-                                  const SizedBox(height: 16),
-                                  const Text(
-                                    "Complete la información de la empresa para solicitar un nuevo grupo:",
-                                    style: TextStyle(
-                                      color: Colors.grey,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  
-                                  // Campos para nuevo grupo
-                                  TextFormField(
-                                    controller: _nuevoGrupoNombreController,
-                                    decoration: InputDecoration(
-                                      labelText: "Nombre del Grupo *",
-                                      prefixIcon: const Icon(Icons.business),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                    ),
-                                    validator: _crearNuevoGrupo ? (value) {
-                                      if (value == null || value.trim().isEmpty) {
-                                        return 'Ingrese el nombre del grupo';
-                                      }
-                                      return null;
-                                    } : null,
-                                  ),
-                                  const SizedBox(height: 12),
-                                  
-                                  TextFormField(
-                                    controller: _nuevoGrupoEmpresaController,
-                                    decoration: InputDecoration(
-                                      labelText: "Nombre de la Empresa *",
-                                      prefixIcon: const Icon(Icons.business_center),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                    ),
-                                    validator: _crearNuevoGrupo ? (value) {
-                                      if (value == null || value.trim().isEmpty) {
-                                        return 'Ingrese el nombre de la empresa';
-                                      }
-                                      return null;
-                                    } : null,
-                                  ),
-                                  const SizedBox(height: 12),
-                                  
-                                  TextFormField(
-                                    controller: _nuevoGrupoTelefonoController,
-                                    keyboardType: TextInputType.phone,
-                                    decoration: InputDecoration(
-                                      labelText: "Teléfono de Contacto *",
-                                      prefixIcon: const Icon(Icons.phone),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                    ),
-                                    validator: _crearNuevoGrupo ? (value) {
-                                      if (value == null || value.trim().isEmpty) {
-                                        return 'Ingrese el teléfono';
-                                      }
-                                      return null;
-                                    } : null,
-                                  ),
-                                  const SizedBox(height: 12),
-                                  
-                                  TextFormField(
-                                    controller: _nuevoGrupoDireccionController,
-                                    decoration: InputDecoration(
-                                      labelText: "Dirección *",
-                                      prefixIcon: const Icon(Icons.location_on),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                    ),
-                                    validator: _crearNuevoGrupo ? (value) {
-                                      if (value == null || value.trim().isEmpty) {
-                                        return 'Ingrese la dirección';
-                                      }
-                                      return null;
-                                    } : null,
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ),
-
-                        if (!_crearNuevoGrupo) ...[
-                          const SizedBox(height: 16),
-                          
-                          // Búsqueda de grupo existente
-                          TextFormField(
-                            controller: _grupoIdController,
+                        // Búsqueda de grupo existente
+                        TextFormField(
+                          controller: _grupoIdController,
                             decoration: InputDecoration(
                               labelText: "ID del Grupo *",
                               prefixIcon: const Icon(Icons.search),
@@ -726,21 +594,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               hintText: "Ingrese el ID del grupo",
                             ),
                             onChanged: (value) {
-                              // Búsqueda en tiempo real con debounce
-                              if (value.length >= 3) {
-                                Future.delayed(const Duration(milliseconds: 500), () {
-                                  if (_grupoIdController.text == value) {
-                                    _buscarGrupo(value.trim());
-                                  }
-                                });
-                              } else {
+                              _debounceTimer?.cancel();
+                              if (value.trim().isEmpty) {
                                 setState(() {
                                   _grupoEncontradoNombre = null;
                                   _grupoEncontradoId = null;
+                                  _busquedaRealizada = false;
                                 });
+                                return;
                               }
+                              _debounceTimer = Timer(
+                                const Duration(milliseconds: 600),
+                                () => _buscarGrupo(value),
+                              );
                             },
-                            validator: _crearNuevoGrupo ? null : (value) {
+                            validator: (value) {
                               if (value == null || value.trim().isEmpty) {
                                 return 'Ingrese el ID del grupo';
                               }
@@ -783,7 +651,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 ],
                               ),
                             ),
-                          ] else if (_grupoIdController.text.isNotEmpty && !_buscandoGrupo) ...[
+                          ] else if (_busquedaRealizada && _grupoEncontradoNombre == null && !_buscandoGrupo) ...[
                             const SizedBox(height: 8),
                             Container(
                               padding: const EdgeInsets.all(12),
@@ -807,7 +675,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                             color: Colors.orange,
                                           ),
                                         ),
-                                        const Text('Verifique el ID o solicite un nuevo grupo'),
+                                        const Text('Verifique el ID ingresado'),
                                       ],
                                     ),
                                   ),
@@ -815,7 +683,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               ),
                             ),
                           ],
-                        ],
 
                         const SizedBox(height: 32),
 
@@ -839,9 +706,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                     strokeWidth: 2,
                                   ),
                                 )
-                              : Text(
-                                  _crearNuevoGrupo ? 'Solicitar Nuevo Grupo' : 'Registrar Usuario',
-                                  style: const TextStyle(
+                              : const Text(
+                                  'Registrar Usuario',
+                                  style: TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
                                   ),

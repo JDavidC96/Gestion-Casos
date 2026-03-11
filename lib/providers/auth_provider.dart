@@ -17,7 +17,7 @@ class AuthProvider with ChangeNotifier {
   Map<String, dynamic>? get userData => _userData;
   bool get isAuthenticated => _user != null;
 
-  // GETTERS PARA GRUPOS Y ROLES
+  // NUEVOS GETTERS PARA GRUPOS Y ROLES ACTUALIZADOS
   String? get grupoId => _userData?['grupoId'];
   String? get grupoNombre => _userData?['grupoNombre'];
   bool get isSuperAdmin => _userData?['role'] == 'super_admin';
@@ -25,6 +25,7 @@ class AuthProvider with ChangeNotifier {
   bool get isSuperInspector => _userData?['role'] == 'superinspector';
   bool get isInspector => _userData?['role'] == 'inspector' || isSuperInspector;
   
+  // Método para verificar si es cualquier tipo de inspector
   bool get isAnyInspector => isInspector || isSuperInspector;
   
   // PERMISOS ESPECÍFICOS SEGÚN JERARQUÍA
@@ -40,52 +41,59 @@ class AuthProvider with ChangeNotifier {
   bool get canGenerateReports => isAnyInspector;
   bool get canManageUsers => isAdmin || isSuperAdmin;
 
+  // NUEVO: Empresas asignadas para inspectores
   List<String> get empresasAsignadas {
     final empresas = _userData?['empresasAsignadas'] as List<dynamic>?;
     return empresas?.cast<String>() ?? [];
   }
 
+  // Verificar permisos de acceso a recursos
   bool puedeAccederRecurso(String? recursoGrupoId) {
-    if (isSuperAdmin || isSuperInspector) return true;
-    if (recursoGrupoId == null) return false;
-    return recursoGrupoId == grupoId;
+    if (isSuperAdmin || isSuperInspector) return true; // Super roles ven todo
+    if (recursoGrupoId == null) return false; // Recursos sin grupo no son accesibles
+    return recursoGrupoId == grupoId; // Solo ve recursos de su grupo
   }
 
+  // Verificar si puede editar un recurso
   bool puedeEditarRecurso(String? recursoGrupoId) {
     if (isSuperAdmin || isAdmin || isSuperInspector) return true;
     return recursoGrupoId == grupoId && isAdmin;
   }
 
+  // NUEVO: Verificar acceso a empresa específica
   bool puedeAccederAEmpresa(String empresaId) {
-    if (isSuperAdmin || isAdmin) return true;
+    if (isSuperAdmin || isAdmin) return true; // Super admin y admin ven todas las empresas
+    
+    // Para inspectores, verificar si la empresa está en sus empresas asignadas
     return empresasAsignadas.contains(empresaId);
   }
 
+  // Verificar permisos para recursos específicos
   bool puedeGestionarGrupo(String? grupoId) {
     return isSuperAdmin || (isAdmin && this.grupoId == grupoId);
   }
 
   bool puedeGestionarUsuario(String? userGrupoId) {
-    return isSuperAdmin || (isAdmin && this.grupoId == userGrupoId);
+    return isSuperAdmin || (isAdmin && grupoId == userGrupoId);
   }
 
   bool puedeVerEmpresa(String? empresaGrupoId) {
     return isSuperAdmin || 
            isSuperInspector || 
-           (isAdmin && this.grupoId == empresaGrupoId) ||
-           (isInspector && this.grupoId == empresaGrupoId);
+           (isAdmin && grupoId == empresaGrupoId) ||
+           (isInspector && grupoId == empresaGrupoId);
   }
 
   AuthProvider() {
+    // Escuchar cambios de autenticación
     FirebaseService.authStateChanges().listen((User? user) {
       _user = user;
-      _isCheckingAuth = false; // Firebase ya respondió, ya sabemos el estado real
       if (user != null) {
         _loadUserData();
       } else {
         _userData = null;
-        notifyListeners();
       }
+      notifyListeners();
     });
   }
 
@@ -136,6 +144,7 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  // Método para recuperación de contraseña
   Future<bool> resetPassword(String email) async {
     _isLoading = true;
     _errorMessage = null;
@@ -154,6 +163,7 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  // Inicio de sesión con Google MODIFICADO
   Future<Map<String, dynamic>?> signInWithGoogle() async {
     _isLoading = true;
     _errorMessage = null;
@@ -164,6 +174,7 @@ class AuthProvider with ChangeNotifier {
       _isLoading = false;
       
       if (result != null && result['needsRegistration'] == false) {
+        // Usuario existe, cargar datos
         _user = result['user'];
         await _loadUserData();
       }
@@ -178,12 +189,13 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  // Método para completar registro con Google
   Future<bool> completeGoogleRegistration(
     String userId,
     String cedula,
     String displayName,
     String email,
-    String? firmaBase64,
+    String? firmaUrl,
     String? grupoId,
     String? grupoNombre,
     String role,
@@ -198,7 +210,7 @@ class AuthProvider with ChangeNotifier {
         cedula,
         displayName,
         email,
-        firmaBase64,
+        firmaUrl,
         grupoId,
         grupoNombre,
         role,
@@ -218,7 +230,7 @@ class AuthProvider with ChangeNotifier {
 
   Future<void> signOut() async {
     await FirebaseService.signOut();
-    await FirebaseService.signOutGoogle();
+    await FirebaseService.signOutGoogle(); // Cerrar sesión de Google también
     _user = null;
     _userData = null;
     notifyListeners();
@@ -251,6 +263,7 @@ class AuthProvider with ChangeNotifier {
     return 'Error desconocido: $error';
   }
 
+  // Método para manejar errores específicos de Google
   String _getGoogleErrorMessage(dynamic error) {
     if (error is FirebaseAuthException) {
       switch (error.code) {

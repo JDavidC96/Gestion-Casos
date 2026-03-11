@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart' as my_auth;
 import 'forgot_password_screen.dart';
 import 'register_screen.dart';
+import 'request_group_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -328,17 +329,35 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(height: 20),
 
                         // Enlace para registro
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                        Column(
                           children: [
-                            const Text("¿No tienes cuenta?"),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Text("¿No tienes cuenta?"),
+                                TextButton(
+                                  onPressed: _navigateToRegister,
+                                  child: const Text(
+                                    "Regístrate",
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF185A9D),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                             TextButton(
-                              onPressed: _navigateToRegister,
+                              onPressed: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (_) => const RequestGroupScreen()),
+                              ),
                               child: const Text(
-                                "Regístrate",
+                                '¿Eres empresa? Regístrala aquí',
                                 style: TextStyle(
-                                  fontWeight: FontWeight.bold,
                                   color: Color(0xFF185A9D),
+                                  fontWeight: FontWeight.bold,
                                 ),
                               ),
                             ),
