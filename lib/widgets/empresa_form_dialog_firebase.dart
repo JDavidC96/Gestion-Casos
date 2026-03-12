@@ -90,15 +90,15 @@ class _EmpresaFormDialogFirebaseState extends State<EmpresaFormDialogFirebase> {
 
       if (widget.empresaId != null) {
         // Actualizar empresa existente
-        await FirebaseService.updateEmpresa(widget.empresaId!, empresaData);
+        await FirebaseService.updateEmpresa(widget.grupoId ?? '', widget.empresaId!, empresaData);
       } else {
         // Crear nueva empresa con información de grupo
         await FirebaseService.addEmpresaConGrupo(
-          empresaData['nombre']!,
-          empresaData['nit']!,
-          empresaData['iconName']!,
-          widget.grupoId,
-          widget.grupoNombre,
+          empresaData['nombre'] as String,
+          empresaData['nit'] as String,
+          empresaData['iconName'] as String,
+          widget.grupoId ?? '',
+          widget.grupoNombre ?? '',
         );
       }
 

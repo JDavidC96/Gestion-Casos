@@ -40,7 +40,7 @@ class _AssignEmpresasDialogState extends State<AssignEmpresasDialog> {
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       
-      final empresasQuery = await FirebaseService.getEmpresasPorGrupo(authProvider.grupoId);
+      final empresasQuery = await FirebaseService.getEmpresasPorGrupo(authProvider.grupoId ?? '');
       
       setState(() {
         _empresasDisponibles = empresasQuery.docs.map((doc) {

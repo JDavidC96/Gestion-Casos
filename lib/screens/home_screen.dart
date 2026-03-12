@@ -115,7 +115,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (confirmar == true) {
       try {
-        await FirebaseService.deleteEmpresa(empresaId);
+        await FirebaseService.deleteEmpresa(authProvider.grupoId ?? '', empresaId);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -138,8 +138,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _mostrarInfoEmpresa(String empresaId, Empresa empresa) async {
-    final casosAbiertos = await FirebaseService.contarCasosPorEmpresa(empresaId, cerrados: false);
-    final totalCasos = await FirebaseService.contarCasosPorEmpresa(empresaId);
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final casosAbiertos = await FirebaseService.contarCasosPorEmpresa(authProvider.grupoId ?? '', empresaId, cerrados: false);
+    final totalCasos = await FirebaseService.contarCasosPorEmpresa(authProvider.grupoId ?? '', empresaId);
 
     if (!mounted) return;
 
@@ -154,10 +155,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _navegarACentros(String empresaId, Empresa empresa) {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
     Navigator.pushNamed(
       context,
       '/centros',
       arguments: {
+        "grupoId": authProvider.grupoId,
         "empresaId": empresaId,
         "empresaNombre": empresa.nombre,
         "nit": empresa.nit,
@@ -332,8 +335,12 @@ class _HomeScreenState extends State<HomeScreen> {
             end: Alignment.bottomRight,
           ),
         ),
-        child: StreamBuilder<QuerySnapshot>(
-          stream: FirebaseService.getEmpresasPorGrupoStream(authProvider.grupoId),
+        child: (!authProvider.isAdmin && !authProvider.isSuperAdmin)
+            ? _buildInspectorEmpresasView(authProvider)
+            : StreamBuilder<QuerySnapshot>(
+          stream: authProvider.grupoId != null
+              ? FirebaseService.getEmpresasPorGrupoStream(authProvider.grupoId!)
+              : const Stream.empty(),
           builder: (context, snapshot) {
             if (snapshot.hasError) {
               return Center(
@@ -432,14 +439,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
                   return FutureBuilder<int>(
                     future: Future.wait([
-                      FirebaseService.contarCasosPorEmpresa(empresaId),
-                      FirebaseService.contarCasosPorEmpresa(empresaId, cerrados: false),
+                      FirebaseService.contarCasosPorEmpresa(authProvider.grupoId ?? '', empresaId),
+                      FirebaseService.contarCasosPorEmpresa(authProvider.grupoId ?? '', empresaId, cerrados: false),
                     ]).then((results) => results[1]), // casos abiertos
                     builder: (context, casosSnapshot) {
                       final casosAbiertos = casosSnapshot.data ?? 0;
                       
                       return FutureBuilder<int>(
-                        future: FirebaseService.contarCasosPorEmpresa(empresaId),
+                        future: FirebaseService.contarCasosPorEmpresa(authProvider.grupoId ?? '', empresaId),
                         builder: (context, totalSnapshot) {
                           final totalCasos = totalSnapshot.data ?? 0;
 
@@ -459,7 +466,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             );
           },
-        ),
+        ), // end StreamBuilder
       ),
       floatingActionButton: 
           // Solo mostrar FAB si tiene permisos
@@ -473,4 +480,119 @@ class _HomeScreenState extends State<HomeScreen> {
             : null,
     );
   }
+  // ─── Vista para inspectores: solo empresas asignadas ─────────────────────
+  Widget _buildInspectorEmpresasView(AuthProvider authProvider) {
+    final empresasAsignadas = (authProvider.userData?['empresasAsignadas'] as List<dynamic>?)
+        ?.cast<String>() ?? [];
+
+    if (empresasAsignadas.isEmpty) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.business_center_outlined, size: 80, color: Colors.white70),
+            SizedBox(height: 16),
+            Text(
+              'No tienes empresas asignadas',
+              style: TextStyle(fontSize: 18, color: Colors.white70),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Contacta al administrador para que te asigne empresas',
+              style: TextStyle(fontSize: 14, color: Colors.white60),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: FirebaseService.getEmpresasAsignadasStream(
+        authProvider.grupoId ?? '',
+        empresasAsignadas,
+      ),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error, size: 64, color: Colors.white),
+                const SizedBox(height: 16),
+                Text('Error: \${snapshot.error}',
+                    style: const TextStyle(color: Colors.white)),
+              ],
+            ),
+          );
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+              child: CircularProgressIndicator(color: Colors.white));
+        }
+
+        final empresas = snapshot.data ?? [];
+
+        if (empresas.isEmpty) {
+          return const Center(
+            child: Text(
+              'No se encontraron las empresas asignadas',
+              style: TextStyle(color: Colors.white70, fontSize: 16),
+            ),
+          );
+        }
+
+        return Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: GridView.builder(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 16,
+            ),
+            itemCount: empresas.length,
+            itemBuilder: (context, index) {
+              final data = empresas[index];
+              final empresaId = data['id'] as String;
+              final empresa = Empresa(
+                id: empresaId,
+                nombre: data['nombre'] ?? '',
+                nit: data['nit'] ?? '',
+                icon: _getSafeIcon(data),
+              );
+
+              return FutureBuilder<int>(
+                future: Future.wait([
+                  FirebaseService.contarCasosPorEmpresa(
+                      authProvider.grupoId ?? '', empresaId),
+                  FirebaseService.contarCasosPorEmpresa(
+                      authProvider.grupoId ?? '', empresaId,
+                      cerrados: false),
+                ]).then((r) => r[1]),
+                builder: (context, casosSnapshot) {
+                  return FutureBuilder<int>(
+                    future: FirebaseService.contarCasosPorEmpresa(
+                        authProvider.grupoId ?? '', empresaId),
+                    builder: (context, totalSnapshot) {
+                      return EmpresaCard(
+                        empresa: empresa,
+                        totalCasos: totalSnapshot.data ?? 0,
+                        casosAbiertos: casosSnapshot.data ?? 0,
+                        onTap: () => _navegarACentros(empresaId, empresa),
+                        onLongPress: () {}, // inspector no edita
+                        puedeEditar: false,
+                      );
+                    },
+                  );
+                },
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+
 }

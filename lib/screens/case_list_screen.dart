@@ -32,6 +32,7 @@ class _CaseListScreenState extends State<CaseListScreen> {
     nit: "",
     icon: Icons.business,
   );
+  String _grupoId   = "";
   String _empresaId = "empresa_default";
   String? _centroId;
   String? _centroNombre;
@@ -75,6 +76,7 @@ class _CaseListScreenState extends State<CaseListScreen> {
     
     if (args != null) {
       setState(() {
+        _grupoId   = args["grupoId"] ?? "";
         _empresaId = args["empresaId"] ?? "empresa_default";
         _empresa = Empresa(
           id: _empresaId,
@@ -96,7 +98,7 @@ class _CaseListScreenState extends State<CaseListScreen> {
     final configProvider = Provider.of<InterfaceConfigProvider>(context, listen: false);
     
     if (authProvider.grupoId != null) {
-      configProvider.loadConfig(authProvider.grupoId!);
+      if (authProvider.grupoId != null) configProvider.loadConfig(authProvider.grupoId!);
     }
   }
 
@@ -164,8 +166,11 @@ class _CaseListScreenState extends State<CaseListScreen> {
       context,
       '/caseDetail',
       arguments: {
-        "casoId": casoId,
-        "caso": caso,
+        "grupoId":   _grupoId,
+        "empresaId": _empresaId,
+        "centroId":  _centroId,
+        "casoId":    casoId,
+        "caso":      caso,
       },
     );
   }
@@ -306,16 +311,14 @@ void _mostrarDialogoReporteDiario() {
                       
                       try {
                         // Obtener todos los casos de la empresa
-                        final snapshot = await FirebaseFirestore.instance
-                            .collection('casos')
-                            .where('empresaId', isEqualTo: _empresaId)
-                            .get();
+                        final casosDocs = await FirebaseService.getCasosDocsParaReporte(
+                          _grupoId, _empresaId);
                         
                         // Cerrar el diálogo antes de generar el PDF
                         Navigator.pop(context);
                         
                         await ReportService.generarReporteCasosPDF(
-                          casos: snapshot.docs,
+                          casos: casosDocs,
                           fecha: fechaSeleccionada,
                           supervisor: supervisorSeleccionado,
                           incluirCerrados: incluirCerrados,
@@ -366,22 +369,15 @@ void _mostrarDialogoReporteDiario() {
   // NUEVO MÉTODO 2 - Obtener supervisores
   Future<List<String>> _obtenerSupervisores() async {
     try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('casos')
-          .where('empresaId', isEqualTo: _empresaId)
-          .get();
-      
+      final casos = await FirebaseService.getCasosPorEmpresa(_grupoId, _empresaId);
       final supervisores = <String>{};
-      
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
+      for (final data in casos) {
         final estadoAbierto = data['estadoAbierto'] as Map<String, dynamic>?;
         final nombre = estadoAbierto?['usuarioNombre'] ?? data['usuarioNombre'];
-        if (nombre != null && nombre.isNotEmpty) {
+        if (nombre != null && (nombre as String).isNotEmpty) {
           supervisores.add(nombre);
         }
       }
-      
       return supervisores.toList()..sort();
     } catch (e) {
       print('Error obteniendo supervisores: $e');
@@ -437,7 +433,7 @@ void _mostrarDialogoReporteDiario() {
           ConfigurableFeature(
             feature: 'mostrarCasosCerrados',
             child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseService.getCasosPorEmpresaStream(_empresaId),
+              stream: FirebaseService.getCasosPorEmpresaStream(_grupoId, _empresaId, _centroId ?? ''),
               builder: (context, snapshot) {
                 if (!snapshot.hasData) return const SizedBox.shrink();
                 
@@ -492,7 +488,7 @@ void _mostrarDialogoReporteDiario() {
           ),
         ),
         child: StreamBuilder<QuerySnapshot>(
-          stream: FirebaseService.getCasosPorEmpresaStream(_empresaId),
+          stream: FirebaseService.getCasosPorEmpresaStream(_grupoId, _empresaId, _centroId ?? ''),
           builder: (context, snapshot) {
             if (snapshot.hasError) {
               return Center(

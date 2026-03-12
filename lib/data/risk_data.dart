@@ -93,7 +93,7 @@ final List<Map<String, dynamic>> matrizPeligros = [
   
   // 6. SEGURIDAD / MECÁNICO
   {
-    "categoria": "Seguridad / Mecánico",
+    "categoria": "Mecánico",
     "numeroCategoria": 6,
     "subgrupos": [
       "Caídas a distinto o mismo nivel",
@@ -166,6 +166,46 @@ final List<Map<String, dynamic>> matrizPeligros = [
     ],
     "icon": Icons.cloud,
     "color": Colors.deepOrange,
+  },
+
+  //11. EMERGENCIAS
+  {
+    "categoria": "Emergencias",
+    "numeroCategoria": 11,
+    "subgrupos": [
+      "Extintores",
+      "Botiquines",
+      "Dispositivos de emergencia",
+      "Sistema de emergencia"
+    ],
+    "icon": Icons.local_hospital_outlined,
+    "color": const Color.fromARGB(255, 248, 3, 3),
+  },
+
+  //12. ACCIDENTES DE TRÁNSITO
+  {
+    "categoria": "Accidentes de tránsito",
+    "numeroCategoria": 12,
+    "subgrupos": [
+      "Vehiculo",
+      "Condiciones de trabajo",
+      "Vias"
+    ],
+    "icon": Icons.car_crash,
+    "color": const Color.fromARGB(255, 0, 0, 0),
+  },
+
+  //13. ALTURAS/ESPACIOS CONFINADOS
+  {
+    "categoria": "Alturas / Espacios confinados",
+    "numeroCategoria": 13,
+    "subgrupos": [
+      "Elementos de proteccion personal",
+      "Condiciones de trabajo",
+      "Equipos"
+    ],
+    "icon": Icons.height,
+    "color": const Color.fromARGB(255, 8, 235, 76),
   },
 ];
 

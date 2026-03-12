@@ -101,7 +101,6 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
         'nombre': _nombreController.text.trim(),
         'tipoRiesgo': _selectedCategoria,
         'subgrupoRiesgo': _selectedSubgrupo,
-        'fechaCreacion': FieldValue.serverTimestamp(),
         'cerrado': false,
         'centroId': widget.centroId,
         'centroNombre': widget.centroNombre,
@@ -115,7 +114,12 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
         casoData['nivelPeligro'] = _selectednivelPeligro;
       }
 
-      await FirebaseService.createCaso(casoData);
+      await FirebaseService.createCaso(
+        widget.grupoId ?? '',
+        widget.empresaId,
+        widget.centroId ?? '',
+        casoData,
+      );
 
       if (mounted) {
         Navigator.pop(context);

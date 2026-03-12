@@ -1,45 +1,41 @@
-import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'camera_service.dart';
 
 class LogoService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  static final ImagePicker _picker = ImagePicker();
-  
-  /// Subir logo del grupo
-  static Future<String?> uploadLogo(XFile image, String grupoId) async {
+
+  /// Subir logo del grupo.
+  /// Abre el selector de galería UNA sola vez, sube a Drive y guarda la URL en Firestore.
+  static Future<String?> uploadLogo(String grupoId) async {
     try {
       print('🔄 Subiendo logo para grupo: $grupoId');
-      
-      // Seleccionar imagen de galería directamente
-      final XFile? selectedImage = await _picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 85,
-      );
-      
-      if (selectedImage != null) {
-        // Usar CameraService para subir a Drive
-        final result = await CameraService.seleccionarFotoGaleria();
-        if (result?['driveUrl'] != null) {
-          await _firestore
-              .collection('grupos')
-              .doc(grupoId)
-              .update({
-            'logoUrl': result!['driveUrl'],
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
-          
-          print('✅ Logo subido exitosamente');
-          return result['driveUrl'];
-        }
+
+      // CameraService.seleccionarFotoGaleria() abre el picker y sube a Drive en un solo paso
+      final result = await CameraService.seleccionarFotoGaleria();
+
+      if (result?['driveUrl'] != null) {
+        final url = result!['driveUrl'] as String;
+
+        await _firestore
+            .collection('grupos')
+            .doc(grupoId)
+            .update({
+          'logoUrl': url,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+
+        print('✅ Logo subido exitosamente: $url');
+        return url;
       }
+
+      print('ℹ️ No se seleccionó ninguna imagen.');
       return null;
     } catch (e) {
       print('❌ Error subiendo logo: $e');
       rethrow;
     }
   }
-  
+
   /// Eliminar logo del grupo
   static Future<void> deleteLogo(String grupoId) async {
     try {
@@ -56,10 +52,11 @@ class LogoService {
       rethrow;
     }
   }
-  
+
   /// Validar permisos para gestionar logo
-  static bool canManageLogo(String? userGrupoId, String targetGrupoId, String userRole) {
-    return userRole == 'super_admin' || 
-           (userRole == 'admin' && userGrupoId == targetGrupoId);
+  static bool canManageLogo(
+      String? userGrupoId, String targetGrupoId, String userRole) {
+    return userRole == 'super_admin' ||
+        (userRole == 'admin' && userGrupoId == targetGrupoId);
   }
 }

@@ -26,6 +26,9 @@ class CaseDetailScreen extends StatefulWidget {
 }
 
 class _CaseDetailScreenState extends State<CaseDetailScreen> {
+  String? _grupoId;
+  String? _empresaId;
+  String? _centroId;
   String? _casoId;
   Map<String, dynamic>? _casoData;
   bool _isLoading = false;
@@ -208,7 +211,7 @@ Future<void> _restoreDraftIfAny() async {
     final configProvider = Provider.of<InterfaceConfigProvider>(context, listen: false);
     
     if (authProvider.grupoId != null) {
-      configProvider.loadConfig(authProvider.grupoId!);
+      if (authProvider.grupoId != null) configProvider.loadConfig(authProvider.grupoId!);
     }
   }
 
@@ -216,7 +219,10 @@ Future<void> _restoreDraftIfAny() async {
   void _loadCaseData() {
     final args = ModalRoute.of(context)!.settings.arguments as Map?;
     if (args != null) {
-      _casoId = args['casoId'] as String?;
+      _grupoId   = args['grupoId']   as String?;
+      _empresaId = args['empresaId'] as String?;
+      _centroId  = args['centroId']  as String?;
+      _casoId    = args['casoId']    as String?;
       if (_casoId != null) {
         _loadFromFirestore();
       }
@@ -228,7 +234,8 @@ Future<void> _restoreDraftIfAny() async {
     if (_casoId == null) return;
 
     try {
-      final doc = await FirebaseService.getCasoById(_casoId!);
+      final doc = await FirebaseService.getCasoById(
+        _grupoId ?? '', _empresaId ?? '', _centroId ?? '', _casoId!);
       if (doc.exists) {
         final data = doc.data() as Map<String, dynamic>;
         setState(() {
@@ -498,7 +505,8 @@ Future<void> _restoreDraftIfAny() async {
         estadoAbiertoData['nivelPeligro'] = _nivelPeligro;
       }
 
-      await FirebaseService.updateEstadoAbierto(_casoId!, estadoAbiertoData);
+      await FirebaseService.updateEstadoAbierto(
+        _grupoId ?? '', _empresaId ?? '', _centroId ?? '', _casoId!, estadoAbiertoData);
 
       setState(() {
         _estadoAbiertoGuardado = true;
@@ -600,7 +608,8 @@ Future<void> _restoreDraftIfAny() async {
           'nombreCliente': _nombreClienteCerrado,
       };
 
-      await FirebaseService.updateEstadoCerrado(_casoId!, estadoCerradoData);
+      await FirebaseService.updateEstadoCerrado(
+        _grupoId ?? '', _empresaId ?? '', _centroId ?? '', _casoId!, estadoCerradoData);
 
       setState(() {
         _estadoCerradoGuardado = true;

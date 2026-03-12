@@ -29,14 +29,21 @@ class _ReportScreenState extends State<ReportScreen> {
   Future<void> _loadInitialData() async {
     
     String? id = widget.casoId;
+    String? grupoId;
+    String? empresaId;
+    String? centroId;
     if (id == null) {
       final args = ModalRoute.of(context)?.settings.arguments as Map?;
-      id = args?['casoId'];
+      id       = args?['casoId'];
+      grupoId  = args?['grupoId'];
+      empresaId = args?['empresaId'];
+      centroId = args?['centroId'];
     }
 
     if (id != null) {
       try {
-        final doc = await FirebaseService.getCasoById(id);
+        final doc = await FirebaseService.getCasoById(
+          grupoId ?? '', empresaId ?? '', centroId ?? '', id);
         if (doc.exists) {
           final data = doc.data() as Map<String, dynamic>;
           setState(() {

@@ -19,6 +19,7 @@ class CentrosTrabajoScreen extends StatefulWidget {
 
 class _CentrosTrabajoScreenState extends State<CentrosTrabajoScreen> {
   Empresa? _empresa; // Cambiar a nullable
+  String? _grupoId;   // ← nuevo
   String? _empresaId; // Cambiar a nullable
   bool _isLoading = true;
 
@@ -42,6 +43,7 @@ class _CentrosTrabajoScreenState extends State<CentrosTrabajoScreen> {
     
     if (args != null) {
       setState(() {
+        _grupoId  = args["grupoId"];
         _empresaId = args["empresaId"] ?? "empresa_default";
         _empresa = Empresa(
           id: _empresaId!,
@@ -68,17 +70,17 @@ class _CentrosTrabajoScreenState extends State<CentrosTrabajoScreen> {
   Future<void> _cargarCasosAbiertos() async {
     try {      
       // Obtener todos los casos de la empresa
-      final casosSnapshot = await FirebaseFirestore.instance
-          .collection('casos')
-          .where('empresaId', isEqualTo: _empresaId)
-          .where('cerrado', isEqualTo: false)
-          .get();
+      // Nueva estructura: iterar centros y obtener casos de cada uno
+      final casos = await FirebaseService.getCasosPorEmpresa(
+        _grupoId ?? '', _empresaId ?? '');
+      final casosFiltrados = casos.where((c) => c['cerrado'] == false).toList();
+      // Build fake QueryDocumentSnapshot-like list — usamos el mapa directo
+      final casosSnapshot = casosFiltrados;
 
       // Contar casos por centro de trabajo
       final casosPorCentro = <String, int>{};
       
-      for (var doc in casosSnapshot.docs) {
-        final data = doc.data();
+      for (var data in casosSnapshot) {
         final centroId = data['centroId'] as String?;
         
         if (centroId != null) {
@@ -102,12 +104,13 @@ class _CentrosTrabajoScreenState extends State<CentrosTrabajoScreen> {
       context,
       '/cases',
       arguments: {
-        "empresaId": _empresaId,
+        "grupoId":      _grupoId,
+        "empresaId":    _empresaId,
         "empresaNombre": _empresa?.nombre ?? "Empresa X",
-        "centroId": centroId,
+        "centroId":     centroId,
         "centroNombre": centroNombre,
-        "icon": _empresa?.icon ?? Icons.business,
-        "nit": _empresa?.nit ?? "",
+        "icon":         _empresa?.icon ?? Icons.business,
+        "nit":          _empresa?.nit ?? "",
       },
     );
   }
@@ -242,17 +245,15 @@ void _mostrarDialogoReporteMensual() {
                       setDialogState(() => isLoading = true);
                       
                       try {
-                        // Obtener todos los casos de la empresa
-                        final snapshot = await FirebaseFirestore.instance
-                            .collection('casos')
-                            .where('empresaId', isEqualTo: _empresaId)
-                            .get();
+                        // Obtener todos los docs reales para ReportService
+                        final todosDocs = await FirebaseService.getCasosDocsParaReporte(
+                          _grupoId ?? '', _empresaId ?? '');
                         
-                        // Agrupar casos por centro
+                        // Agrupar docs por centro
                         final casosPorCentro = <String, List<QueryDocumentSnapshot>>{};
                         
-                        for (var doc in snapshot.docs) {
-                          final data = doc.data();
+                        for (final doc in todosDocs) {
+                          final data = doc.data() as Map<String, dynamic>;
                           final fechaCreacion = (data['fechaCreacion'] as Timestamp?)?.toDate();
                           
                           if (fechaCreacion == null) continue;
@@ -399,17 +400,13 @@ void _mostrarDialogoReporteMensual() {
 
   Future<List<String>> _obtenerSupervisores() async {
     try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('casos')
-          .where('empresaId', isEqualTo: _empresaId)
-          .get();
-      
+      final casos = await FirebaseService.getCasosPorEmpresa(
+        _grupoId ?? '', _empresaId ?? '');
       final supervisores = <String>{};
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
+      for (final data in casos) {
         final estadoAbierto = data['estadoAbierto'] as Map<String, dynamic>?;
         final usuarioNombre = estadoAbierto?['usuarioNombre'] ?? data['usuarioNombre'];
-        if (usuarioNombre != null) {
+        if (usuarioNombre != null && (usuarioNombre as String).isNotEmpty) {
           supervisores.add(usuarioNombre);
         }
       }
@@ -444,8 +441,8 @@ void _mostrarDialogoReporteMensual() {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(_getAppBarTitle()),
-            StreamBuilder<QuerySnapshot>(
-              stream: FirebaseService.getCasosPorEmpresaStream(_empresaId!),
+            FutureBuilder<List<Map<String, dynamic>>>(
+              future: FirebaseService.getCasosPorEmpresa(_grupoId ?? '', _empresaId ?? ''),
               builder: (context, snapshot) {
                 if (!snapshot.hasData) {
                   return const Text(
@@ -453,15 +450,9 @@ void _mostrarDialogoReporteMensual() {
                     style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
                   );
                 }
-
-                final casosAbiertos = snapshot.data!.docs
-                    .where((doc) {
-                      final data = doc.data() as Map<String, dynamic>;
-                      return data['cerrado'] == false && 
-                             authProvider.puedeAccederRecurso(data['grupoId']);
-                    })
+                final casosAbiertos = snapshot.data!
+                    .where((c) => c['cerrado'] == false)
                     .length;
-
                 return Text(
                   '$casosAbiertos casos abiertos en la empresa',
                   style: const TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
@@ -499,7 +490,7 @@ void _mostrarDialogoReporteMensual() {
           ),
         ),
         child: StreamBuilder<QuerySnapshot>(
-          stream: FirebaseService.getCentrosPorEmpresaStream(_empresaId!),
+          stream: FirebaseService.getCentrosPorEmpresaStream(_grupoId ?? '', _empresaId!),
           builder: (context, snapshot) {
             if (snapshot.hasError) {
               return Center(
@@ -631,7 +622,7 @@ void _mostrarDialogoReporteMensual() {
 
     if (confirmar == true) {
       try {
-        await FirebaseService.deleteCentroTrabajo(centroId);
+        await FirebaseService.deleteCentroTrabajo(_grupoId ?? '', _empresaId ?? '', centroId);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(

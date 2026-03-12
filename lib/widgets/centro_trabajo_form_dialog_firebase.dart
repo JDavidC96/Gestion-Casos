@@ -85,9 +85,9 @@ class _CentroTrabajoFormDialogFirebaseState extends State<CentroTrabajoFormDialo
       };
 
       if (widget.centroId != null) {
-        await FirebaseService.updateCentroTrabajo(widget.centroId!, centroData);
+        await FirebaseService.updateCentroTrabajo(widget.grupoId ?? '', widget.empresaId, widget.centroId!, centroData);
       } else {
-        await FirebaseService.createCentroTrabajo(centroData);
+        await FirebaseService.createCentroTrabajo(widget.grupoId ?? '', widget.empresaId, centroData);
       }
 
       if (mounted) {

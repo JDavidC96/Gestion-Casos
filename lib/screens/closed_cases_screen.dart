@@ -24,6 +24,7 @@ class ClosedCasesScreen extends StatelessWidget {
       icon: Icons.business,
     );
     
+    final String grupoId   = args?["grupoId"] ?? "";
     final String empresaId = args?["empresaId"] ?? empresa.id;
     final String? centroNombre = args?["centroNombre"];
 
@@ -58,8 +59,8 @@ class ClosedCasesScreen extends StatelessWidget {
             ),
         ],
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseService.getCasosPorEmpresaStream(empresaId),
+      body: FutureBuilder<List<QueryDocumentSnapshot>>(
+        future: FirebaseService.getCasosDocsParaReporte(grupoId, empresaId),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return Center(
@@ -89,12 +90,10 @@ class ClosedCasesScreen extends StatelessWidget {
             return _buildEmptyState(context, empresa.nombre, centroNombre);
           }
 
-          // Filtrar casos por grupo y solo casos cerrados
-          final casosCerrados = snapshot.data!.docs.where((doc) {
+          // Filtrar solo casos cerrados
+          final casosCerrados = snapshot.data!.where((doc) {
             final data = doc.data() as Map<String, dynamic>;
-            final esCerrado = data['cerrado'] == true;
-            final tieneAcceso = authProvider.puedeAccederRecurso(data['grupoId']);
-            return esCerrado && tieneAcceso;
+            return data['cerrado'] == true;
           }).toList();
 
           if (casosCerrados.isEmpty) {
@@ -123,7 +122,8 @@ class ClosedCasesScreen extends StatelessWidget {
                 cerrado: true,
               );
 
-              return _buildCaseCard(context, caso, casoId);
+              return _buildCaseCard(
+                context, caso, casoId, grupoId, empresaId, data);
             },
           );
         },
@@ -187,7 +187,14 @@ class ClosedCasesScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildCaseCard(BuildContext context, Case caso, String casoId) {
+  Widget _buildCaseCard(
+    BuildContext context,
+    Case caso,
+    String casoId,
+    String grupoId,
+    String empresaId,
+    Map<String, dynamic> data,
+  ) {
     final tipoColor = _getTipoRiesgoColor(caso.tipoRiesgo);
     final nivelColor = _getnivelPeligroColor(caso.nivelPeligro);
     final caseIcon = _getCaseIcon(caso.tipoRiesgo);
@@ -209,8 +216,11 @@ class ClosedCasesScreen extends StatelessWidget {
             context,
             '/caseDetail',
             arguments: {
-              "casoId": casoId,
-              "caso": caso,
+              "grupoId":   grupoId,
+              "empresaId": empresaId,
+              "centroId":  data['centroId'] ?? '',
+              "casoId":    casoId,
+              "caso":      caso,
             },
           );
         },
@@ -466,10 +476,18 @@ class ClosedCasesScreen extends StatelessWidget {
         return Colors.brown;
       case 'Eléctrico':
         return Colors.yellow[700]!;
-      case 'Incendio':
+      case 'Locativo':
+        return Colors.blueGrey;
+      case 'Social':
         return Colors.red;
-      case 'Caídas':
+      case 'Fenoménos naturales':
         return Colors.deepOrange;
+      case 'Emergencias':
+        return Colors.redAccent;
+      case 'Accidentes de tránsito':
+        return Colors.black;
+      case 'Alturas / Espacios confinados':
+        return Colors.green[800]!;
       default:
         return Colors.grey;
     }
