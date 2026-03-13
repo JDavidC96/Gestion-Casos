@@ -174,7 +174,7 @@ class ReportService {
             child: pw.Column(
               mainAxisAlignment: pw.MainAxisAlignment.center,
               children: [
-                pw.Text('REGISTRO DE INSPECCIÓN — REPORTE DIARIO',
+                pw.Text('REGISTRO DE INSPECCIÓN',
                     style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9),
                     textAlign: pw.TextAlign.center),
                 pw.Text(

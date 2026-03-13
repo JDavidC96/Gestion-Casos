@@ -21,6 +21,7 @@ import 'firebase_options.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import './services/case_draft_service.dart';
 import './screens/login_success_animation.dart';
+import './screens/group_admin_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -53,6 +54,7 @@ class GestionCasosApp extends StatelessWidget {
         ),
         initialRoute: '/loginSuccess',
         routes: {
+          '/group_admin': (_) => const GroupAdminScreen(),
           '/loginSuccess': (_) => const LoginSuccessAnimation(),
           '/interface_config': (_) => const InterfaceConfigScreen(),
           '/login': (_) => const LoginScreen(),

@@ -1,5 +1,6 @@
 // lib/screens/admin_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // Clipboard
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/empresas_provider.dart'; // Añadir import
@@ -169,6 +170,8 @@ class _AdminScreenContentState extends State<_AdminScreenContent> {
   Widget _buildAdminContent(AdminController adminController) {
     return Column(
       children: [
+        // ── Tarjeta ID del grupo ─────────────────────────────
+        _buildGrupoIdCard(),
         // Sección del logo (solo para admin de grupo)
         LogoSection(
           grupoId: widget.authProvider.grupoId,
@@ -183,7 +186,6 @@ class _AdminScreenContentState extends State<_AdminScreenContent> {
           child: UsersListSection(
             grupoId: widget.authProvider.grupoId!,
             grupoNombre: widget.authProvider.grupoNombre,
-            onAddUser: _agregarInspector,
           ),
         ),
       ],
@@ -251,36 +253,100 @@ class _AdminScreenContentState extends State<_AdminScreenContent> {
           child: const Icon(Icons.image),
           tooltip: 'Cambiar Logo',
         ),
-        const SizedBox(height: 16),
-        // Botón para agregar inspector
-        FloatingActionButton(
-          onPressed: _agregarInspector,
-          backgroundColor: Colors.orange,
-          foregroundColor: Colors.white,
-          child: const Icon(Icons.person_add),
-          tooltip: 'Agregar Inspector',
-        ),
+
       ],
     );
   }
 
-  void _agregarInspector() {
-    // Solo admin puede agregar inspectores
-    if (!widget.authProvider.canManageUsers) {
-      _mostrarErrorPermisos();
-      return;
-    }
 
-    showDialog(
-      context: context,
-      builder: (context) => UserFormDialog(
-        onSave: (userData) {
-          // El inspector se creará automáticamente en el grupo del admin
-          _mostrarSnackBar('Inspector agregado exitosamente', Colors.green);
-        },
-        isSuperAdmin: false, // Admin no es super admin
-        grupoId: widget.authProvider.grupoId,
-        grupoNombre: widget.authProvider.grupoNombre,
+
+  // ── Tarjeta con ID del grupo y botón para copiar/compartir ─────────────
+  Widget _buildGrupoIdCard() {
+    final grupoId     = widget.authProvider.grupoId ?? '';
+    final grupoNombre = widget.authProvider.grupoNombre ?? 'Mi Grupo';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: Card(
+        elevation: 3,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              // Ícono
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6A11CB).withOpacity(0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.group_work_outlined,
+                    color: Color(0xFF6A11CB), size: 24),
+              ),
+              const SizedBox(width: 14),
+              // Textos
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      grupoNombre,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'ID: $grupoId',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                        fontFamily: 'monospace',
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Comparte este ID con nuevos inspectores',
+                      style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Botón copiar
+              Tooltip(
+                message: 'Copiar ID del grupo',
+                child: IconButton(
+                  icon: const Icon(Icons.copy_outlined,
+                      color: Color(0xFF6A11CB)),
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: grupoId));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Row(
+                          children: [
+                            const Icon(Icons.check_circle,
+                                color: Colors.white, size: 18),
+                            const SizedBox(width: 8),
+                            Text('ID copiado: \${grupoId.substring(0, 8)}...'),
+                          ],
+                        ),
+                        backgroundColor: const Color(0xFF6A11CB),
+                        duration: const Duration(seconds: 2),
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

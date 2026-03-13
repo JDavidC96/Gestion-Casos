@@ -1,35 +1,45 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
 import 'camera_service.dart';
 
 class LogoService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   /// Subir logo del grupo.
-  /// Abre el selector de galería UNA sola vez, sube a Drive y guarda la URL en Firestore.
+  /// Abre el selector de galería, sube a Drive y guarda la URL en Firestore.
   static Future<String?> uploadLogo(String grupoId) async {
     try {
       print('🔄 Subiendo logo para grupo: $grupoId');
 
-      // CameraService.seleccionarFotoGaleria() abre el picker y sube a Drive en un solo paso
+      // PASO 1: Seleccionar imagen de galería
       final result = await CameraService.seleccionarFotoGaleria();
 
-      if (result?['driveUrl'] != null) {
-        final url = result!['driveUrl'] as String;
-
-        await _firestore
-            .collection('grupos')
-            .doc(grupoId)
-            .update({
-          'logoUrl': url,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-
-        print('✅ Logo subido exitosamente: $url');
-        return url;
+      if (result == null || result['xFile'] == null) {
+        print('ℹ️ No se seleccionó ninguna imagen.');
+        return null;
       }
 
-      print('ℹ️ No se seleccionó ninguna imagen.');
-      return null;
+      // PASO 2: Subir a Drive (igual que las fotos de casos)
+      final XFile xFile = result['xFile'] as XFile;
+      print('📤 Subiendo logo a Drive...');
+      final String? driveUrl = await CameraService.subirFotoADrive(xFile);
+
+      if (driveUrl == null) {
+        print('❌ No se pudo subir el logo a Drive.');
+        return null;
+      }
+
+      // PASO 3: Guardar URL en Firestore
+      await _firestore
+          .collection('grupos')
+          .doc(grupoId)
+          .update({
+        'logoUrl': driveUrl,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      print('✅ Logo subido exitosamente: $driveUrl');
+      return driveUrl;
     } catch (e) {
       print('❌ Error subiendo logo: $e');
       rethrow;

@@ -115,7 +115,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (confirmar == true) {
       try {
-        await FirebaseService.deleteEmpresa(authProvider.grupoId ?? '', empresaId);
+        // Para super_admin, grupoId viene del doc de la empresa
+        final snap = await FirebaseFirestore.instance
+            .collectionGroup('empresas')
+            .where(FieldPath.documentId, isEqualTo: empresaId)
+            .limit(1)
+            .get();
+        final grupoIdReal = authProvider.grupoId ??
+            (snap.docs.isNotEmpty
+                ? (snap.docs.first.data() as Map)['grupoId'] ?? ''
+                : '');
+        await FirebaseService.deleteEmpresa(grupoIdReal, empresaId);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -337,7 +347,9 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         child: (!authProvider.isAdmin && !authProvider.isSuperAdmin)
             ? _buildInspectorEmpresasView(authProvider)
-            : StreamBuilder<QuerySnapshot>(
+            : authProvider.isSuperAdmin
+                ? _buildSuperAdminEmpresasView(authProvider)
+                : StreamBuilder<QuerySnapshot>(
           stream: authProvider.grupoId != null
               ? FirebaseService.getEmpresasPorGrupoStream(authProvider.grupoId!)
               : const Stream.empty(),
@@ -466,7 +478,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             );
           },
-        ), // end StreamBuilder
+        ),
       ),
       floatingActionButton: 
           // Solo mostrar FAB si tiene permisos
@@ -480,6 +492,131 @@ class _HomeScreenState extends State<HomeScreen> {
             : null,
     );
   }
+
+  // ─── Vista para super_admin: todas las empresas de todos los grupos ───────
+  Widget _buildSuperAdminEmpresasView(AuthProvider authProvider) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: FirebaseService.getAllEmpresas(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+              child: CircularProgressIndicator(color: Colors.white));
+        }
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error, size: 64, color: Colors.white),
+                const SizedBox(height: 16),
+                Text('Error: \${snapshot.error}',
+                    style: const TextStyle(color: Colors.white),
+                    textAlign: TextAlign.center),
+              ],
+            ),
+          );
+        }
+
+        final empresas = snapshot.data ?? [];
+
+        if (empresas.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.business, size: 80, color: Colors.white70),
+                const SizedBox(height: 16),
+                const Text('No hay empresas registradas',
+                    style: TextStyle(fontSize: 18, color: Colors.white70)),
+                const SizedBox(height: 8),
+                Text('Aprueba solicitudes de grupo para ver empresas aquí',
+                    style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.white70.withOpacity(0.8)),
+                    textAlign: TextAlign.center),
+              ],
+            ),
+          );
+        }
+
+        return Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: GridView.builder(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 16,
+            ),
+            itemCount: empresas.length,
+            itemBuilder: (context, index) {
+              final data = empresas[index];
+              final empresaId = data['id'] as String;
+              final grupoId   = data['grupoId'] as String;
+              final empresa = Empresa(
+                id: empresaId,
+                nombre: data['nombre'] ?? '',
+                nit: data['nit'] ?? '',
+                icon: _getSafeIcon(data),
+              );
+
+              // Chip de grupo sobre la card
+              return Stack(
+                children: [
+                  FutureBuilder<int>(
+                    future: FirebaseService.contarCasosPorEmpresa(
+                        grupoId, empresaId),
+                    builder: (context, totalSnap) {
+                      return EmpresaCard(
+                        empresa: empresa,
+                        totalCasos: totalSnap.data ?? 0,
+                        casosAbiertos: 0,
+                        onTap: () {
+                          // Pasar grupoId correcto al navegar
+                          Navigator.pushNamed(context, '/centros', arguments: {
+                            'grupoId':      grupoId,
+                            'empresaId':    empresaId,
+                            'empresaNombre': empresa.nombre,
+                            'nit':          empresa.nit,
+                            'icon':         empresa.icon,
+                          });
+                        },
+                        onLongPress: () => _mostrarOpciones(empresaId, empresa),
+                        puedeEditar: true,
+                      );
+                    },
+                  ),
+                  // Etiqueta del grupo en la esquina superior
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF6A11CB).withOpacity(0.85),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        data['grupoNombre'] ?? grupoId.substring(0, 6),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
   // ─── Vista para inspectores: solo empresas asignadas ─────────────────────
   Widget _buildInspectorEmpresasView(AuthProvider authProvider) {
     final empresasAsignadas = (authProvider.userData?['empresasAsignadas'] as List<dynamic>?)

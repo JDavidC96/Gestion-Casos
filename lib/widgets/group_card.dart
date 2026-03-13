@@ -65,10 +65,43 @@ class GroupCard extends StatelessWidget {
         PopupMenuButton<String>(
           onSelected: (value) => onAction(value, groupId, groupData),
           itemBuilder: (context) => [
-            const PopupMenuItem(value: 'users', child: Text('Gestionar Usuarios')),
-            const PopupMenuItem(value: 'config', child: Text('Configurar Interfaz')),
-            const PopupMenuItem(value: 'edit', child: Text('Editar Grupo')),
-            const PopupMenuItem(value: 'delete', child: Text('Eliminar Grupo')),
+            const PopupMenuItem(
+              value: 'users',
+              child: ListTile(
+                leading: Icon(Icons.open_in_new, size: 20, color: Colors.blue),
+                title: Text('Ver Grupo'),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'config',
+              child: ListTile(
+                leading: Icon(Icons.settings, size: 20, color: Colors.green),
+                title: Text('Configurar Interfaz'),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'edit',
+              child: ListTile(
+                leading: Icon(Icons.edit, size: 20),
+                title: Text('Editar Grupo'),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'delete',
+              child: ListTile(
+                leading: Icon(Icons.delete, size: 20, color: Colors.red),
+                title: Text('Eliminar Grupo',
+                    style: TextStyle(color: Colors.red)),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+              ),
+            ),
           ],
         ),
       ],

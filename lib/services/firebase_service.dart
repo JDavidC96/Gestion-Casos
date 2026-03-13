@@ -222,6 +222,25 @@ class FirebaseService {
     return _empresasRef(grupoId).orderBy('nombre').get();
   }
 
+  /// Future version for super_admin: fetches all empresas from all grupos once.
+  static Future<List<Map<String, dynamic>>> getAllEmpresas() async {
+    final gruposSnap = await _db.collection('grupos').get();
+    final all = <Map<String, dynamic>>[];
+    for (final grupo in gruposSnap.docs) {
+      final empresasSnap = await _empresasRef(grupo.id).orderBy('nombre').get();
+      for (final doc in empresasSnap.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        all.add({
+          ...data,
+          'id': doc.id,
+          'grupoId': grupo.id,
+          'grupoNombre': (grupo.data() as Map)['nombre'] ?? '',
+        });
+      }
+    }
+    return all;
+  }
+
   static Future<String> addEmpresaConGrupo(
     String nombre,
     String nit,

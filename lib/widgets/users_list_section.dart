@@ -12,13 +12,13 @@ import '../providers/empresas_provider.dart';
 class UsersListSection extends StatelessWidget {
   final String grupoId;
   final String? grupoNombre;
-  final VoidCallback onAddUser;
+  final VoidCallback? onAddUser;
   
   const UsersListSection({
     super.key,
     required this.grupoId,
     required this.grupoNombre,
-    required this.onAddUser,
+    this.onAddUser,
   });
   
   @override
@@ -195,9 +195,6 @@ class UsersListSection extends StatelessWidget {
     final message = authProvider.isSuperAdmin 
         ? 'No hay usuarios en el sistema' 
         : 'No hay inspectores en tu grupo';
-    final buttonText = authProvider.isSuperAdmin 
-        ? 'Agregar Primer Usuario' 
-        : 'Agregar Primer Inspector';
     
     return Center(
       child: Column(
@@ -217,16 +214,7 @@ class UsersListSection extends StatelessWidget {
               style: const TextStyle(fontSize: 16, color: Colors.white70),
             ),
           ],
-          const SizedBox(height: 16),
-          ElevatedButton.icon(
-            onPressed: onAddUser,
-            icon: const Icon(Icons.add),
-            label: Text(buttonText),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: authProvider.isSuperAdmin ? Colors.purple : Colors.orange,
-              foregroundColor: Colors.white,
-            ),
-          ),
+
         ],
       ),
     );
@@ -255,16 +243,7 @@ class UsersListSection extends StatelessWidget {
               style: const TextStyle(fontSize: 16, color: Colors.white70),
             ),
           ],
-          const SizedBox(height: 16),
-          ElevatedButton.icon(
-            onPressed: onAddUser,
-            icon: const Icon(Icons.add),
-            label: Text(authProvider.isSuperAdmin ? 'Agregar Usuario' : 'Agregar Inspector'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: authProvider.isSuperAdmin ? Colors.purple : Colors.orange,
-              foregroundColor: Colors.white,
-            ),
-          ),
+
         ],
       ),
     );

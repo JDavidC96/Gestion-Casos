@@ -1,6 +1,7 @@
 // lib/screens/case_detail_screen.dart
 import 'dart:typed_data';
 import 'dart:async';
+import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:signature/signature.dart';
@@ -46,6 +47,7 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
   String? _fotoAbiertoPath;
   String? _fotoAbiertoUrl;
   Uint8List? _firmaAbierto;
+  String? _firmaAbiertoUrl;   // URL Drive de la firma del inspector (estado abierto)
   Position? _ubicacionAbierto;
   bool _estadoAbiertoGuardado = false;
   String? _responsableAbiertoNombre;
@@ -59,6 +61,7 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
   String? _fotoCerradoPath;
   String? _fotoCerradoUrl;
   Uint8List? _firmaCerrado;
+  String? _firmaCerradoUrl;    // URL Drive de la firma del inspector (estado cerrado)
   Position? _ubicacionCerrado;
   bool _estadoCerradoGuardado = false;
   String? _responsableCerradoNombre;
@@ -183,25 +186,67 @@ Future<void> _restoreDraftIfAny() async {
     });
   }
 
+  // Descarga firma desde Drive URL y la convierte a Uint8List
+  // Usa la misma lógica que PdfService para convertir URLs de Drive
+  static String? _convertirUrlDrive(String? url) {
+    if (url == null) return null;
+    if (url.contains('drive.google.com')) {
+      final fileId = RegExp(r'\/d\/([a-zA-Z0-9-_]+)').firstMatch(url)?.group(1);
+      if (fileId != null) {
+        return 'https://drive.google.com/uc?export=download&id=$fileId';
+      }
+    }
+    return url;
+  }
+
+  Future<Uint8List?> _descargarFirmaDesdeDrive(String? driveUrl) async {
+    final directUrl = _convertirUrlDrive(driveUrl);
+    if (directUrl == null) return null;
+    try {
+      final response = await http.get(Uri.parse(directUrl))
+          .timeout(const Duration(seconds: 15));
+      if (response.statusCode == 200) return response.bodyBytes;
+    } catch (e) {
+      print('⚠️ No se pudo descargar firma desde Drive: \$e');
+    }
+    return null;
+  }
+
   // Método para cargar datos del usuario actual
-  void _loadUserData() {
+  Future<void> _loadUserData() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final userData = authProvider.userData;
     
     if (userData != null) {
-      setState(() {
-        _usuarioId = userData['uid'];
-        _usuarioNombre = userData['displayName'] ?? 'Usuario';
-        
-        if (userData['firmaBase64'] != null) {
-          _usuarioFirma = CameraService.base64ToFirma(userData['firmaBase64']);
+      _usuarioId = userData['uid'];
+      _usuarioNombre = userData['displayName'] ?? 'Usuario';
+      _responsableAbiertoNombre = _usuarioNombre;
+      _responsableCerradoNombre = _usuarioNombre;
+
+      // Firma desde base64 (si existe en el perfil)
+      if (userData['firmaBase64'] != null) {
+        _usuarioFirma = CameraService.base64ToFirma(userData['firmaBase64']);
+        if (mounted) setState(() {
           _firmaAbierto = _usuarioFirma;
           _firmaCerrado = _usuarioFirma;
+        });
+      }
+
+      // Firma desde Drive URL (guardada en el perfil del inspector)
+      final firmaUrl = userData['firmaUrl'] as String?;
+      if (firmaUrl != null) {
+        _firmaAbiertoUrl = firmaUrl;
+        _firmaCerradoUrl = firmaUrl;
+        // Descargar imagen para mostrar en el card
+        final bytes = await _descargarFirmaDesdeDrive(firmaUrl);
+        if (bytes != null && mounted) {
+          setState(() {
+            _usuarioFirma = bytes;
+            _firmaAbierto ??= bytes;   // solo si no había firma base64
+            _firmaCerrado ??= bytes;
+          });
         }
-        
-        _responsableAbiertoNombre = _usuarioNombre;
-        _responsableCerradoNombre = _usuarioNombre;
-      });
+      }
     }
   }
 
@@ -260,6 +305,10 @@ Future<void> _restoreDraftIfAny() async {
             if (estadoAbierto['firmaBase64'] != null) {
               _firmaAbierto = CameraService.base64ToFirma(estadoAbierto['firmaBase64']);
             }
+            // Cargar URL Drive de firma del inspector si existe en Firestore
+            if (estadoAbierto['firmaUrl'] != null) {
+              _firmaAbiertoUrl = estadoAbierto['firmaUrl'] as String?;
+            }
             
             if (estadoAbierto['ubicacion'] != null) {
               final ub = estadoAbierto['ubicacion'];
@@ -294,6 +343,10 @@ Future<void> _restoreDraftIfAny() async {
             if (estadoCerrado['firmaBase64'] != null) {
               _firmaCerrado = CameraService.base64ToFirma(estadoCerrado['firmaBase64']);
             }
+            // Cargar URL Drive de firma del inspector si existe en Firestore
+            if (estadoCerrado['firmaUrl'] != null) {
+              _firmaCerradoUrl = estadoCerrado['firmaUrl'] as String?;
+            }
             
             if (estadoCerrado['ubicacion'] != null) {
               final ub = estadoCerrado['ubicacion'];
@@ -313,6 +366,8 @@ Future<void> _restoreDraftIfAny() async {
           }
         });
         await _restoreDraftIfAny();
+        // Descargar firmas desde Drive si hay URLs guardadas
+        await _cargarFirmasDesdeDrive();
       }
     } catch (e) {
       if (mounted) {
@@ -320,6 +375,18 @@ Future<void> _restoreDraftIfAny() async {
           SnackBar(content: Text('Error cargando caso: $e')),
         );
       }
+    }
+  }
+
+  /// Descarga las firmas del inspector desde Drive y actualiza el estado.
+  Future<void> _cargarFirmasDesdeDrive() async {
+    if (_firmaAbiertoUrl != null && _firmaAbierto == null) {
+      final bytes = await _descargarFirmaDesdeDrive(_firmaAbiertoUrl);
+      if (bytes != null && mounted) setState(() => _firmaAbierto = bytes);
+    }
+    if (_firmaCerradoUrl != null && _firmaCerrado == null) {
+      final bytes = await _descargarFirmaDesdeDrive(_firmaCerradoUrl);
+      if (bytes != null && mounted) setState(() => _firmaCerrado = bytes);
     }
   }
 
@@ -482,6 +549,7 @@ Future<void> _restoreDraftIfAny() async {
         'recomendacionesControl': _recomendacionesControl?.trim(),
         'fotoUrl': _fotoAbiertoUrl,
         'firmaBase64': _usuarioFirma != null ? CameraService.firmaToBase64(_usuarioFirma!) : null,
+        if (_firmaAbiertoUrl != null) 'firmaUrl': _firmaAbiertoUrl,
         'usuarioId': _usuarioId,
         'usuarioNombre': _usuarioNombre,
         'ubicacionTexto': _ubicacionTextoCtrl.text.trim(),
@@ -590,6 +658,7 @@ Future<void> _restoreDraftIfAny() async {
         'descripcionSolucion': _descripcionSolucion.trim(),
         'fotoUrl': _fotoCerradoUrl,
         'firmaBase64': _usuarioFirma != null ? CameraService.firmaToBase64(_usuarioFirma!) : null,
+        if (_firmaCerradoUrl != null) 'firmaUrl': _firmaCerradoUrl,
         'usuarioId': _usuarioId,
         'usuarioNombre': _usuarioNombre,
         'ubicacion': _ubicacionCerrado != null
@@ -703,7 +772,7 @@ Future<void> _restoreDraftIfAny() async {
                             fotoPath: _fotoAbiertoPath,
                             fotoUrl: _fotoAbiertoUrl,
                             firma: _firmaAbierto,
-                            firmaUrl: null,
+                            firmaUrl: _firmaAbiertoUrl,
                             bloqueado: _estadoAbiertoGuardado,
                             usuarioNombre: _responsableAbiertoNombre,
                             ubicacionController: _ubicacionTextoCtrl,
@@ -746,7 +815,7 @@ Future<void> _restoreDraftIfAny() async {
                               fotoPath: _fotoCerradoPath,
                               fotoUrl: _fotoCerradoUrl,
                               firma: _firmaCerrado,
-                              firmaUrl: null,
+                              firmaUrl: _firmaCerradoUrl,
                               bloqueado: _estadoCerradoGuardado,
                               usuarioNombre: _responsableCerradoNombre,
                               onDescripcionSolucionChanged: (value) {

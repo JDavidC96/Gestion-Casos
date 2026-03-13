@@ -161,6 +161,148 @@ class _CaseListScreenState extends State<CaseListScreen> {
     );
   }
 
+  // ─── Permisos de edición / eliminación ────────────────────────────────────
+
+  /// Admin y super_admin pueden editar cualquier caso de su grupo.
+  /// Inspector solo puede editar los suyos (creadoPor == su uid).
+  bool _puedeEditarCaso(AuthProvider auth, Map<String, dynamic> data) {
+    if (auth.isSuperAdmin || auth.isAdmin) return true;
+    return auth.isAnyInspector &&
+        (data['creadoPor'] ?? '') == (auth.userData?['uid'] ?? '__none__');
+  }
+
+  /// Admin y super_admin pueden eliminar cualquier caso.
+  /// Inspector solo puede eliminar los suyos.
+  bool _puedeEliminarCaso(AuthProvider auth, Map<String, dynamic> data) {
+    if (auth.isSuperAdmin || auth.isAdmin) return true;
+    return auth.isAnyInspector &&
+        (data['creadoPor'] ?? '') == (auth.userData?['uid'] ?? '__none__');
+  }
+
+  // ─── Editar caso ────────────────────────────────────────────────────────
+
+  void _editarCaso(String casoId, Map<String, dynamic> data) {
+    final nombreCtrl = TextEditingController(text: data['nombre'] ?? '');
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.edit_outlined, color: Colors.blue),
+            SizedBox(width: 8),
+            Text('Editar caso'),
+          ],
+        ),
+        content: TextField(
+          controller: nombreCtrl,
+          decoration: const InputDecoration(
+            labelText: 'Nombre del caso',
+            border: OutlineInputBorder(),
+          ),
+          autofocus: true,
+          maxLines: 2,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final nuevoNombre = nombreCtrl.text.trim();
+              if (nuevoNombre.isEmpty) return;
+              Navigator.pop(context);
+              try {
+                await FirebaseService.updateCaso(
+                  _grupoId, _empresaId, _centroId ?? '', casoId,
+                  {'nombre': nuevoNombre},
+                );
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Caso actualizado'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error al actualizar: \$e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+            child: const Text('Guardar', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── Eliminar caso ──────────────────────────────────────────────────────
+
+  Future<void> _confirmarEliminarCaso(
+      String casoId, String nombreCaso) async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.red),
+            SizedBox(width: 8),
+            Text('Eliminar caso'),
+          ],
+        ),
+        content: Text(
+          '¿Estás seguro de eliminar el caso\n"$nombreCaso"?\n\nEsta acción no se puede deshacer.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Eliminar',
+                style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmar == true && mounted) {
+      try {
+        await FirebaseService.deleteCaso(
+            _grupoId, _empresaId, _centroId ?? '', casoId);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Caso eliminado'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error al eliminar: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
   void _navegarADetalleCaso(String casoId, Case caso) {
     Navigator.pushNamed(
       context,
@@ -594,12 +736,17 @@ void _mostrarDialogoReporteDiario() {
                         cerrado: false,
                       );
 
+                      final puedeEditar  = _puedeEditarCaso(authProvider, data);
+                      final puedeEliminar = _puedeEliminarCaso(authProvider, data);
+
                       return CaseCard(
                         caso: caso,
                         onTap: () => _navegarADetalleCaso(casoId, caso),
-                        // Pasar configuración al CaseCard
                         mostrarNivelRiesgo: _debeMostrarNivelRiesgo(caso, configProvider),
                         nivelRiesgoColor: _getNivelRiesgoColor(caso, configProvider),
+                        mostrarMenu: puedeEditar || puedeEliminar,
+                        onEdit:   puedeEditar   ? () => _editarCaso(casoId, data)             : null,
+                        onDelete: puedeEliminar ? () => _confirmarEliminarCaso(casoId, caso.nombre) : null,
                       );
                     },
                   ),

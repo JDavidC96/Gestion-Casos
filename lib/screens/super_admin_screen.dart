@@ -5,12 +5,14 @@ import 'package:provider/provider.dart';
 import '../services/user_service.dart';
 import '../providers/auth_provider.dart';
 import '../providers/empresas_provider.dart';
+import '../controllers/admin_controller.dart';
 import '../widgets/user_form_dialog.dart';
 import '../widgets/group_form_dialog.dart';
 import '../widgets/group_users_dialog.dart';
 import '../widgets/user_card.dart';
 import '../widgets/group_card.dart';
 import '../widgets/assign_empresas_dialog.dart';
+import '../screens/group_admin_screen.dart';
 
 class SuperAdminScreen extends StatefulWidget {
   const SuperAdminScreen({super.key});
@@ -181,10 +183,20 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
         itemBuilder: (context, index) {
           final doc = groups[index];
           final data = doc.data() as Map<String, dynamic>;
-          return GroupCard(
-            groupId: doc.id,
-            groupData: data,
-            onAction: _handleGroupAction,
+          return GestureDetector(
+            onTap: () => Navigator.pushNamed(
+              context,
+              '/group_admin',
+              arguments: {
+                'groupId': doc.id,
+                'groupName': data['nombre'] as String?,
+              },
+            ),
+            child: GroupCard(
+              groupId: doc.id,
+              groupData: data,
+              onAction: _handleGroupAction,
+            ),
           );
         },
       ),
@@ -831,10 +843,23 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
       String action, String groupId, Map<String, dynamic> groupData) {
     switch (action) {
       case 'users':
-        _gestionarUsuarios(groupId, groupData);
+        Navigator.pushNamed(
+          context,
+          '/group_admin',
+          arguments: {
+            'groupId': groupId,
+            'groupName': groupData['nombre'] as String?,
+          },
+        );
         break;
       case 'config':
         _configurarInterfaz(groupId, groupData);
+        break;
+      case 'logo':
+        _cambiarLogoGrupo(groupId);
+        break;
+      case 'delete_logo':
+        _eliminarLogoGrupo(groupId);
         break;
       case 'edit':
         _editarGrupo(groupId, groupData);
@@ -875,14 +900,17 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
     });
   }
 
-  void _gestionarUsuarios(String groupId, Map<String, dynamic> groupData) {
-    showDialog(
-      context: context,
-      builder: (context) => GroupUsersDialog(
-        groupId: groupId,
-        groupName: groupData['nombre'],
-      ),
-    );
+  /// Cambia el logo del grupo indicado. Usa AdminController con el grupoId
+  /// pasado directamente, sin depender del AuthProvider del SuperAdmin.
+  void _cambiarLogoGrupo(String groupId) {
+    final controller = AdminController();
+    controller.changeLogoForGroup(context, groupId);
+  }
+
+  /// Elimina el logo del grupo indicado.
+  void _eliminarLogoGrupo(String groupId) {
+    final controller = AdminController();
+    controller.deleteLogoForGroup(context, groupId);
   }
 
   void _configurarInterfaz(String groupId, Map<String, dynamic> groupData) {

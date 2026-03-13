@@ -133,4 +133,91 @@ class AdminController with ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
   }
+
+  /// Cargar logo de un grupo específico (para uso desde SuperAdmin / GroupAdminScreen).
+  /// No depende del AuthProvider — recibe el grupoId directamente.
+  Future<void> loadLogoForGroup(String grupoId) async {
+    await _loadLogo(grupoId);
+  }
+
+  /// Cambiar logo de un grupo específico (para uso desde SuperAdmin).
+  /// No depende del AuthProvider — recibe el grupoId directamente.
+  Future<void> changeLogoForGroup(BuildContext context, String grupoId) async {
+    try {
+      _loadingLogo = true;
+      notifyListeners();
+
+      final newLogoUrl = await LogoService.uploadLogo(grupoId);
+
+      if (newLogoUrl != null) {
+        _logoUrl = newLogoUrl;
+        notifyListeners();
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Logo actualizado correctamente'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No se seleccionó ninguna imagen'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      _errorMessage = 'Error cambiando logo: $e';
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error al cargar logo: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      _loadingLogo = false;
+      notifyListeners();
+    }
+  }
+
+  /// Eliminar logo de un grupo específico (para uso desde SuperAdmin).
+  /// No depende del AuthProvider — recibe el grupoId directamente.
+  Future<void> deleteLogoForGroup(BuildContext context, String grupoId) async {
+    try {
+      _loadingLogo = true;
+      notifyListeners();
+
+      await LogoService.deleteLogo(grupoId);
+      _logoUrl = null;
+      notifyListeners();
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Logo eliminado correctamente'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      _errorMessage = 'Error eliminando logo: $e';
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error al eliminar logo: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      _loadingLogo = false;
+      notifyListeners();
+    }
+  }
 }
