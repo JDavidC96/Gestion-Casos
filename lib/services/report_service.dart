@@ -1,4 +1,5 @@
 // lib/services/report_service.dart
+import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
@@ -130,9 +131,109 @@ class ReportService {
       ),
     );
 
+    final Uint8List bytesDiario = await pdf.save();
+    final String nombreDiario = 'Reporte_Diario_${DateFormat('yyyyMMdd').format(fecha)}.pdf';
     await Printing.layoutPdf(
-      onLayout: (format) async => pdf.save(),
-      name: 'Reporte_Diario_${DateFormat('yyyyMMdd').format(fecha)}.pdf',
+      onLayout: (_) async => bytesDiario,
+      name: nombreDiario,
+    );
+  }
+
+  /// Comparte el reporte diario via WhatsApp, correo, Drive, etc.
+  static Future<void> compartirReporteCasosPDF({
+    required List<QueryDocumentSnapshot> casos,
+    required DateTime fecha,
+    String? supervisor,
+    bool incluirCerrados = true,
+    required String empresaNombre,
+    String? centroNombre,
+  }) async {
+    final casosFiltrados = _filtrarCasosPorDia(
+      casos: casos,
+      fecha: fecha,
+      supervisor: supervisor,
+      incluirCerrados: incluirCerrados,
+    );
+
+    if (casosFiltrados.isEmpty) {
+      throw Exception('No hay casos para el día seleccionado');
+    }
+
+    final List<pw.MemoryImage?> imagenes = await Future.wait(
+      casosFiltrados.map((doc) async {
+        final data = doc.data() as Map<String, dynamic>;
+        final estadoAbierto = data['estadoAbierto'] as Map<String, dynamic>? ?? {};
+        final fotoUrl = _convertirUrlDrive(estadoAbierto['fotoUrl'] as String?);
+        if (fotoUrl == null) return null;
+        try {
+          final response = await http.get(Uri.parse(fotoUrl))
+              .timeout(const Duration(seconds: 15));
+          if (response.statusCode == 200) return pw.MemoryImage(response.bodyBytes);
+        } catch (_) {}
+        return null;
+      }),
+    );
+
+    final pdf = pw.Document();
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.letter.landscape,
+        margin: const pw.EdgeInsets.all(18),
+        build: (pw.Context context) {
+          final widgets = <pw.Widget>[];
+          widgets.add(_buildEncabezadoDiario(empresaNombre, centroNombre, fecha, supervisor));
+          widgets.add(pw.SizedBox(height: 10));
+          for (int i = 0; i < casosFiltrados.length; i++) {
+            final doc = casosFiltrados[i];
+            final data = doc.data() as Map<String, dynamic>;
+            final estadoAbierto = data['estadoAbierto'] as Map<String, dynamic>? ?? {};
+            final nombreCaso    = _val(data['nombre']);
+            final empresa       = _val(data['empresaNombre']) ?? empresaNombre;
+            final centro        = _val(data['centroNombre']) ?? centroNombre ?? 'Principal';
+            final inspector     = _val(estadoAbierto['usuarioNombre']) ?? _val(data['usuarioNombre']) ?? 'N/A';
+            final ubicacion     = _val(estadoAbierto['ubicacionTexto']) ?? 'N/A';
+            final desc          = _val(estadoAbierto['descripcionHallazgo']) ?? _val(data['descripcionRiesgo']) ?? 'Sin descripción';
+            final nivel         = _val(estadoAbierto['nivelPeligro']) ?? _val(data['nivelPeligro']) ?? 'N/A';
+            final control       = _val(estadoAbierto['recomendacionesControl']) ?? 'N/A';
+            final categoria     = _val(data['tipoRiesgo']) ?? 'N/A';
+            final tipoEsp       = _val(data['subgrupoRiesgo']) ?? 'N/A';
+            final esCerrado     = data['cerrado'] == true;
+            final estado        = esCerrado ? 'Completado' : 'Pendiente';
+            DateTime fechaC;
+            if (data['fechaCreacion'] is Timestamp) {
+              fechaC = (data['fechaCreacion'] as Timestamp).toDate();
+            } else {
+              fechaC = fecha;
+            }
+            final fechaTexto = DateFormat('dd/MM/yyyy').format(fechaC);
+            final horaTexto  = DateFormat('HH:mm:ss').format(fechaC);
+            if (i > 0) {
+              widgets.add(pw.SizedBox(height: 8));
+              widgets.add(pw.Divider(thickness: 0.5, color: PdfColors.grey400));
+              widgets.add(pw.SizedBox(height: 4));
+            }
+            widgets.add(pw.Text('Caso \${i + 1} de \${casosFiltrados.length}',
+                style: pw.TextStyle(fontSize: 7, color: PdfColors.grey600)));
+            widgets.add(pw.SizedBox(height: 3));
+            widgets.add(_buildBloqueInspeccion(
+              empresa: empresa, centro: centro, inspector: inspector,
+              fechaTexto: fechaTexto, horaTexto: horaTexto,
+              nombreCaso: nombreCaso ?? 'Sin nombre', categoria: categoria,
+              tipoEspecifico: tipoEsp, ubicacion: ubicacion, desc: desc,
+              nivel: nivel, control: control, estado: estado, imagen: imagenes[i],
+            ));
+          }
+          widgets.add(pw.SizedBox(height: 12));
+          widgets.add(_buildResumen(casosFiltrados));
+          return widgets;
+        },
+      ),
+    );
+
+    final Uint8List bytes = await pdf.save();
+    await Printing.sharePdf(
+      bytes: bytes,
+      filename: 'Reporte_Diario_${DateFormat('yyyyMMdd').format(fecha)}.pdf',
     );
   }
 
@@ -328,9 +429,44 @@ class ReportService {
       ),
     );
 
+    final Uint8List bytesMensual = await pdf.save();
+    final String nombreMensual = 'Reporte_Mensual_Centros_${_getNombreMes(mes)}_$anio.pdf';
     await Printing.layoutPdf(
-      onLayout: (format) async => pdf.save(),
-      name: 'Reporte_Mensual_Centros_${_getNombreMes(mes)}_$anio.pdf',
+      onLayout: (_) async => bytesMensual,
+      name: nombreMensual,
+    );
+  }
+
+  /// Comparte el reporte mensual via WhatsApp, correo, Drive, etc.
+  static Future<void> compartirReporteMensualCentrosPDF({
+    required Map<String, List<QueryDocumentSnapshot>> casosPorCentro,
+    required int mes,
+    required int anio,
+    String? supervisor,
+    bool incluirCerrados = true,
+    required String empresaNombre,
+  }) async {
+    final pdf = pw.Document();
+    const pageFormat = PdfPageFormat(
+      330 * PdfPageFormat.mm,
+      216 * PdfPageFormat.mm,
+    );
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: pageFormat,
+        margin: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        build: (pw.Context context) => [
+          _buildHeaderMensualFormatoImagen(empresaNombre, mes, anio),
+          pw.SizedBox(height: 6),
+          _buildTablaCentrosFormatoImagen(casosPorCentro, mes, anio),
+          _buildResumenMensual(casosPorCentro),
+        ],
+      ),
+    );
+    final Uint8List bytes = await pdf.save();
+    await Printing.sharePdf(
+      bytes: bytes,
+      filename: 'Reporte_Mensual_Centros_${_getNombreMes(mes)}_$anio.pdf',
     );
   }
 

@@ -30,12 +30,14 @@ class _EmpresaFormDialogFirebaseState extends State<EmpresaFormDialogFirebase> {
     {"icon": Icons.business, "label": "Oficina", "name": "business"},
     {"icon": Icons.store, "label": "Tienda", "name": "store"},
     {"icon": Icons.apartment, "label": "Edificio", "name": "apartment"},
-    {"icon": Icons.local_shipping, "label": "Logística", "name": "local_shipping"},
+    {"icon": Icons.local_shipping, "label": "Distribuidora", "name": "local_shipping"},
     {"icon": Icons.warehouse, "label": "Bodega", "name": "warehouse"},
     {"icon": Icons.account_balance, "label": "Banco", "name": "account_balance"},
     {"icon": Icons.school, "label": "Escuela", "name": "school"},
     {"icon": Icons.local_hospital, "label": "Hospital", "name": "local_hospital"},
     {"icon": Icons.restaurant, "label": "Restaurante", "name": "restaurant"},
+    {"icon": Icons.coffee_maker, "label": "Cafetería", "name": "coffee"},
+    {"icon": Icons.apartment_rounded, "label": "Empresa de servicios", "name": "apartment_rounded"},
   ];
 
   late TextEditingController _nombreController;

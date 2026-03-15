@@ -162,6 +162,7 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
   Widget _buildCategoriaSelector() {
     return DropdownButtonFormField<String>(
       value: _selectedCategoria,
+      isExpanded: true,
       decoration: const InputDecoration(
         labelText: "Categoría de Peligro",
         border: OutlineInputBorder(),
@@ -177,7 +178,13 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
                       size: 20,
                     ),
                     const SizedBox(width: 12),
-                    Text(categoria),
+                    Expanded(
+                      child: Text(
+                        categoria,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                    ),
                   ],
                 ),
               ))
@@ -206,10 +213,15 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
         labelText: "Tipo Específico",
         border: OutlineInputBorder(),
       ),
+      isExpanded: true,
       items: _subgrupos
           .map((subgrupo) => DropdownMenuItem(
                 value: subgrupo,
-                child: Text(subgrupo),
+                child: Text(
+                  subgrupo,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
               ))
           .toList(),
       onChanged: (value) {
@@ -320,6 +332,8 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
                                       color: Colors.blue[700],
                                       fontWeight: FontWeight.bold,
                                     ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
                                   ),
                                 ],
                               ),

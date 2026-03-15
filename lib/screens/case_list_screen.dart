@@ -42,33 +42,20 @@ class _CaseListScreenState extends State<CaseListScreen> {
   @override
   void initState() {
     super.initState();
-    // Inicializar inmediatamente con valores por defecto
-    _initializeWithDefaults();
-    
-    // Usar postFrameCallback para inicializar después del primer build
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initializeData();
-    });
   }
 
-  void _initializeWithDefaults() {
-    // Establecer valores por defecto inmediatamente
-    _empresa = Empresa(
-      id: "empresa_default",
-      nombre: "Empresa X",
-      nit: "",
-      icon: Icons.business,
-    );
-    _empresaId = "empresa_default";
-    _empresaIcon = Icons.business;
-  }
-
-  void _initializeData() {
-    if (_isInitialized) return;
-    
-    _initializeEmpresaFromArguments();
-    _loadInterfaceConfig();
-    _isInitialized = true;
+  // didChangeDependencies se ejecuta antes del primer build y tiene acceso
+  // a ModalRoute. Así _grupoId y _empresaId están listos antes de que el
+  // StreamBuilder intente construir la query de Firestore, evitando el
+  // ArgumentError por path vacío.
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_isInitialized) {
+      _isInitialized = true;
+      _initializeEmpresaFromArguments();
+      _loadInterfaceConfig();
+    }
   }
 
   void _initializeEmpresaFromArguments() {
@@ -445,61 +432,76 @@ void _mostrarDialogoReporteDiario() {
                 onPressed: () => Navigator.pop(context),
                 child: const Text('Cancelar'),
               ),
-              ElevatedButton(
-                onPressed: isLoading 
-                  ? null 
-                  : () async {
-                      setDialogState(() => isLoading = true);
-                      
-                      try {
-                        // Obtener todos los casos de la empresa
-                        final casosDocs = await FirebaseService.getCasosDocsParaReporte(
-                          _grupoId, _empresaId);
-                        
-                        // Cerrar el diálogo antes de generar el PDF
-                        Navigator.pop(context);
-                        
-                        await ReportService.generarReporteCasosPDF(
-                          casos: casosDocs,
-                          fecha: fechaSeleccionada,
-                          supervisor: supervisorSeleccionado,
-                          incluirCerrados: incluirCerrados,
-                          empresaNombre: _empresa.nombre,
-                          centroNombre: _centroNombre,
-                        );
-                        
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('✅ Reporte generado exitosamente'),
-                              backgroundColor: Colors.green,
-                            ),
-                          );
-                        }
-                      } catch (e) {
-                        // Si hay error, asegurarse de cerrar el diálogo si aún está abierto
-                        if (Navigator.canPop(context)) {
-                          Navigator.pop(context);
-                        }
-                        
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Error: $e'),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                        }
-                      }
-                    },
-                child: isLoading 
-                  ? const SizedBox(
-                      width: 20, 
-                      height: 20, 
-                      child: CircularProgressIndicator(strokeWidth: 2)
-                    )
-                  : const Text('Generar'),
-              ),
+              // Helper local para obtener los docs del reporte diario
+              ...(() {
+                Future<void> ejecutar({required bool compartir}) async {
+                  setDialogState(() => isLoading = true);
+                  try {
+                    final casosDocs = await FirebaseService.getCasosDocsParaReporte(
+                      _grupoId, _empresaId);
+                    Navigator.pop(context);
+                    if (compartir) {
+                      await ReportService.compartirReporteCasosPDF(
+                        casos: casosDocs,
+                        fecha: fechaSeleccionada,
+                        supervisor: supervisorSeleccionado,
+                        incluirCerrados: incluirCerrados,
+                        empresaNombre: _empresa.nombre,
+                        centroNombre: _centroNombre,
+                      );
+                    } else {
+                      await ReportService.generarReporteCasosPDF(
+                        casos: casosDocs,
+                        fecha: fechaSeleccionada,
+                        supervisor: supervisorSeleccionado,
+                        incluirCerrados: incluirCerrados,
+                        empresaNombre: _empresa.nombre,
+                        centroNombre: _centroNombre,
+                      );
+                    }
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(compartir
+                              ? '✅ PDF listo para compartir'
+                              : '✅ Reporte generado exitosamente'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    if (Navigator.canPop(context)) Navigator.pop(context);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error: \$e'), backgroundColor: Colors.red),
+                      );
+                    }
+                  }
+                }
+
+                return [
+                  ElevatedButton.icon(
+                    onPressed: isLoading ? null : () => ejecutar(compartir: false),
+                    icon: isLoading
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.picture_as_pdf, size: 18),
+                    label: const Text('Ver PDF'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red.shade700,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: isLoading ? null : () => ejecutar(compartir: true),
+                    icon: const Icon(Icons.share, size: 18),
+                    label: const Text('Compartir'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green.shade700,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ];
+              })(),
             ],
           );
         },
@@ -538,6 +540,15 @@ void _mostrarDialogoReporteDiario() {
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
     final configProvider = Provider.of<InterfaceConfigProvider>(context);
+
+    // Mientras los argumentos no estén listos, mostrar loading en lugar de
+    // lanzar un query de Firestore con path vacío.
+    if (!_isInitialized || _grupoId.isEmpty || _empresaId.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Cargando...')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(

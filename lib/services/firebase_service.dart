@@ -390,6 +390,18 @@ class FirebaseService {
     return await _casoDoc(grupoId, empresaId, centroId, casoId).get();
   }
 
+  /// Busca un caso por su ID usando collectionGroup, sin necesitar el path completo.
+  /// Útil cuando solo se tiene el casoId (ej. desde ReportScreen navegado directo).
+  static Future<DocumentSnapshot?> getCasoByIdGlobal(String casoId) async {
+    final query = await _db
+        .collectionGroup('casos')
+        .where(FieldPath.documentId, isEqualTo: casoId)
+        .limit(1)
+        .get();
+    if (query.docs.isEmpty) return null;
+    return query.docs.first;
+  }
+
   static Stream<DocumentSnapshot> getCasoStream(String grupoId,
       String empresaId, String centroId, String casoId) {
     return _casoDoc(grupoId, empresaId, centroId, casoId).snapshots();
@@ -499,7 +511,7 @@ class FirebaseService {
 
   static Future<Map<String, dynamic>?> getUserData(String userId) async {
     final doc = await _db.collection('users').doc(userId).get();
-    return doc.data() as Map<String, dynamic>?;
+    return doc.data();
   }
 
   /// Obtiene todos los casos de un grupo (para reportes globales).

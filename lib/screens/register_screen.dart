@@ -187,9 +187,59 @@ class _RegisterScreenState extends State<RegisterScreen> {
       final userCredential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(email: email, password: password);
       return userCredential.user!;
-    } catch (e) {
+    } on FirebaseAuthException catch (e) {
+      // Si el correo ya existe en Auth (por un registro Google abandonado),
+      // verificar si tiene documento en Firestore. Si NO lo tiene, es una
+      // cuenta huérfana: vincular email/password y reutilizar ese uid.
+      if (e.code == 'email-already-in-use') {
+        final doc = await _firestore
+            .collection('users')
+            .where('email', isEqualTo: email)
+            .limit(1)
+            .get();
+
+        if (doc.docs.isEmpty) {
+          // Cuenta huérfana — iniciar sesión con Google para obtener el User
+          // y vincularle las credenciales email/password.
+          try {
+            final credential = EmailAuthProvider.credential(
+              email: email,
+              password: password,
+            );
+            // Intentar iniciar sesión directamente con email (puede fallar si
+            // solo existe el proveedor Google), en cuyo caso vinculamos.
+            UserCredential linkedCredential;
+            try {
+              linkedCredential = await FirebaseAuth.instance
+                  .signInWithEmailAndPassword(email: email, password: password);
+            } on FirebaseAuthException {
+              // El usuario existe pero con proveedor Google; vincular email/password
+              final currentUser = FirebaseAuth.instance.currentUser;
+              if (currentUser != null && currentUser.email == email) {
+                linkedCredential =
+                    await currentUser.linkWithCredential(credential);
+              } else {
+                // Forzar sign-in con Google primero no es posible aquí sin UI;
+                // lanzar error descriptivo para que el usuario use Google.
+                throw FirebaseAuthException(
+                  code: 'account-exists-with-google',
+                  message:
+                      'Este correo ya fue registrado con Google. Inicia sesión con Google para completar tu registro.',
+                );
+              }
+            }
+            return linkedCredential.user!;
+          } catch (linkError) {
+            if (linkError is FirebaseAuthException &&
+                linkError.code == 'account-exists-with-google') {
+              rethrow;
+            }
+            rethrow;
+          }
+        }
+      }
       print('Error creando usuario en Firebase Auth: $e');
-      throw e;
+      rethrow;
     }
   }
 
@@ -262,10 +312,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     } catch (e) {
       if (mounted) {
+        String mensajeError = e.toString().replaceAll('Exception: ', '');
+        if (e is FirebaseAuthException &&
+            e.code == 'account-exists-with-google') {
+          mensajeError = e.message ??
+              'Este correo ya fue registrado con Google. Usa el botón "Continuar con Google".';
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: ${e.toString()}'),
+            content: Text(mensajeError),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
           ),
         );
       }

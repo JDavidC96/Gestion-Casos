@@ -99,17 +99,24 @@ class _GroupAdminScreenState extends State<GroupAdminScreen> {
           end: Alignment.bottomRight,
         ),
       ),
-      child: Column(
-        children: [
-          LogoSection(
-            grupoId: _groupId,
-            grupoNombre: _groupName,
-            onChangeLogo: _cambiarLogo,
-            onDeleteLogo: _eliminarLogo,
-            onConfigureInterface: _configurarInterfaz,
+      child: CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(
+            child: Column(
+              children: [
+                LogoSection(
+                  grupoId: _groupId,
+                  grupoNombre: _groupName,
+                  onChangeLogo: _cambiarLogo,
+                  onDeleteLogo: _eliminarLogo,
+                  onConfigureInterface: _configurarInterfaz,
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
           ),
-          const SizedBox(height: 16),
-          Expanded(
+          // Lista de usuarios — ocupa el espacio restante
+          SliverFillRemaining(
             child: UsersListSection(
               grupoId: _groupId,
               grupoNombre: _groupName,

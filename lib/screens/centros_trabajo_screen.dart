@@ -26,16 +26,24 @@ class _CentrosTrabajoScreenState extends State<CentrosTrabajoScreen> {
   // Mapa para almacenar el conteo de casos por centro
   final Map<String, int> _casosAbiertosPorCentro = {};
 
+  bool _argumentsLoaded = false;
+
   @override
   void initState() {
     super.initState();
-    _initializeData();
   }
 
-  void _initializeData() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+  // didChangeDependencies se ejecuta antes del primer build y tiene acceso
+  // a ModalRoute, a diferencia de initState. Esto garantiza que _empresa
+  // ya esté inicializado cuando el AppBar se construya por primera vez,
+  // evitando el "0..." que aparecía en algunos dispositivos (ej. Oppo).
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_argumentsLoaded) {
+      _argumentsLoaded = true;
       _loadEmpresaFromArguments();
-    });
+    }
   }
 
   void _loadEmpresaFromArguments() {
@@ -238,96 +246,96 @@ void _mostrarDialogoReporteMensual() {
                 onPressed: () => Navigator.pop(context),
                 child: const Text('Cancelar'),
               ),
-              ElevatedButton(
-                onPressed: isLoading 
-                  ? null 
-                  : () async {
-                      setDialogState(() => isLoading = true);
-                      
-                      try {
-                        // Obtener todos los docs reales para ReportService
-                        final todosDocs = await FirebaseService.getCasosDocsParaReporte(
-                          _grupoId ?? '', _empresaId ?? '');
-                        
-                        // Agrupar docs por centro
-                        final casosPorCentro = <String, List<QueryDocumentSnapshot>>{};
-                        
-                        for (final doc in todosDocs) {
-                          final data = doc.data() as Map<String, dynamic>;
-                          final fechaCreacion = (data['fechaCreacion'] as Timestamp?)?.toDate();
-                          
-                          if (fechaCreacion == null) continue;
-                          
-                          // Filtrar por mes y año
-                          if (fechaCreacion.month == mesSeleccionado && 
-                              fechaCreacion.year == anioSeleccionado) {
-                            
-                            // Filtrar por supervisor si se especificó
-                            if (supervisorSeleccionado != null && supervisorSeleccionado!.isNotEmpty) {
-                              final estadoAbierto = data['estadoAbierto'] as Map<String, dynamic>?;
-                              final usuarioNombre = estadoAbierto?['usuarioNombre'] ?? data['usuarioNombre'];
-                              if (usuarioNombre != supervisorSeleccionado) continue;
-                            }
-                            
-                            // Filtrar por estado si no se incluyen cerrados
-                            if (!incluirCerrados && data['cerrado'] == true) continue;
-                            
-                            final centroNombre = data['centroNombre'] ?? 'Sin centro';
-                            
-                            if (!casosPorCentro.containsKey(centroNombre)) {
-                              casosPorCentro[centroNombre] = [];
-                            }
-                            casosPorCentro[centroNombre]!.add(doc);
-                          }
-                        }
-                        
-                        // Cerrar el diálogo
-                        Navigator.pop(context);
-                        
-                        if (casosPorCentro.isEmpty) {
-                          throw Exception('No hay casos para el período seleccionado');
-                        }
-                        
-                        await ReportService.generarReporteMensualCentrosPDF(
-                          casosPorCentro: casosPorCentro,
-                          mes: mesSeleccionado,
-                          anio: anioSeleccionado,
-                          supervisor: supervisorSeleccionado,
-                          incluirCerrados: incluirCerrados,
-                          empresaNombre: _empresa?.nombre ?? 'Empresa',
-                        );
-                        
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('✅ Reporte mensual generado exitosamente'),
-                              backgroundColor: Colors.green,
-                            ),
-                          );
-                        }
-                      } catch (e) {
-                        if (Navigator.canPop(context)) {
-                          Navigator.pop(context);
-                        }
-                        
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Error: $e'),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                        }
-                      }
-                    },
-                child: isLoading 
-                  ? const SizedBox(
-                      width: 20, 
-                      height: 20, 
-                      child: CircularProgressIndicator(strokeWidth: 2)
-                    )
-                  : const Text('Generar'),
-              ),
+              ...(() {
+                Future<Map<String, List<QueryDocumentSnapshot>>> _buildCasosPorCentro() async {
+                  final todosDocs = await FirebaseService.getCasosDocsParaReporte(
+                    _grupoId ?? '', _empresaId ?? '');
+                  final casosPorCentro = <String, List<QueryDocumentSnapshot>>{};
+                  for (final doc in todosDocs) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    final fechaCreacion = (data['fechaCreacion'] as Timestamp?)?.toDate();
+                    if (fechaCreacion == null) continue;
+                    if (fechaCreacion.month != mesSeleccionado || fechaCreacion.year != anioSeleccionado) continue;
+                    if (supervisorSeleccionado != null && supervisorSeleccionado!.isNotEmpty) {
+                      final estadoAbierto = data['estadoAbierto'] as Map<String, dynamic>?;
+                      final usuarioNombre = estadoAbierto?['usuarioNombre'] ?? data['usuarioNombre'];
+                      if (usuarioNombre != supervisorSeleccionado) continue;
+                    }
+                    if (!incluirCerrados && data['cerrado'] == true) continue;
+                    final centroNombre = data['centroNombre'] ?? 'Sin centro';
+                    casosPorCentro.putIfAbsent(centroNombre, () => []).add(doc);
+                  }
+                  if (casosPorCentro.isEmpty) throw Exception('No hay casos para el período seleccionado');
+                  return casosPorCentro;
+                }
+
+                Future<void> ejecutar({required bool compartir}) async {
+                  setDialogState(() => isLoading = true);
+                  try {
+                    final casosPorCentro = await _buildCasosPorCentro();
+                    Navigator.pop(context);
+                    if (compartir) {
+                      await ReportService.compartirReporteMensualCentrosPDF(
+                        casosPorCentro: casosPorCentro,
+                        mes: mesSeleccionado,
+                        anio: anioSeleccionado,
+                        supervisor: supervisorSeleccionado,
+                        incluirCerrados: incluirCerrados,
+                        empresaNombre: _empresa?.nombre ?? 'Empresa',
+                      );
+                    } else {
+                      await ReportService.generarReporteMensualCentrosPDF(
+                        casosPorCentro: casosPorCentro,
+                        mes: mesSeleccionado,
+                        anio: anioSeleccionado,
+                        supervisor: supervisorSeleccionado,
+                        incluirCerrados: incluirCerrados,
+                        empresaNombre: _empresa?.nombre ?? 'Empresa',
+                      );
+                    }
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(compartir
+                              ? '✅ PDF listo para compartir'
+                              : '✅ Reporte mensual generado exitosamente'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    if (Navigator.canPop(context)) Navigator.pop(context);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error: \$e'), backgroundColor: Colors.red),
+                      );
+                    }
+                  }
+                }
+
+                return [
+                  ElevatedButton.icon(
+                    onPressed: isLoading ? null : () => ejecutar(compartir: false),
+                    icon: isLoading
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.picture_as_pdf, size: 18),
+                    label: const Text('Ver PDF'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red.shade700,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: isLoading ? null : () => ejecutar(compartir: true),
+                    icon: const Icon(Icons.share, size: 18),
+                    label: const Text('Compartir'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green.shade700,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ];
+              })(),
             ],
           );
         },

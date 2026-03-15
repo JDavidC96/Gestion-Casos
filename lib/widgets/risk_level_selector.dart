@@ -86,15 +86,6 @@ class RiskLevelSelector extends StatelessWidget {
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: Colors.grey[300]!),
           ),
-          child: const Text(
-            "Leyenda: EL = Enfermedad Laboral, IPP = Incapacidad Permanente Parcial, I = Invalidez, M = Muerte",
-            style: TextStyle(
-              fontSize: 11,
-              color: Colors.grey,
-              fontStyle: FontStyle.italic,
-            ),
-            textAlign: TextAlign.center,
-          ),
         ),
       ],
     );

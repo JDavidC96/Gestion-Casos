@@ -1,4 +1,5 @@
 // lib/providers/interface_config_provider.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/interface_config_service.dart';
 
@@ -15,7 +16,9 @@ class InterfaceConfigProvider with ChangeNotifier {
   Future<void> loadConfig(String grupoId) async {
     _isLoading = true;
     _errorMessage = null;
-    notifyListeners();
+    // Diferir la notificación para evitar "setState during build" cuando
+    // este método es invocado desde didChangeDependencies o initState.
+    scheduleMicrotask(notifyListeners);
 
     try {
       _currentConfig = await InterfaceConfigService.getConfigInterfaz(grupoId);

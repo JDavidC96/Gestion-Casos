@@ -1,11 +1,10 @@
 // lib/screens/admin_screen.dart
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Clipboard
+import 'package:flutter/services.dart'; 
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
-import '../providers/empresas_provider.dart'; // Añadir import
+import '../providers/empresas_provider.dart'; 
 import '../controllers/admin_controller.dart';
-import '../widgets/user_form_dialog.dart';
 import '../widgets/logo_section.dart';
 import '../widgets/users_list_section.dart';
 
@@ -168,21 +167,27 @@ class _AdminScreenContentState extends State<_AdminScreenContent> {
 
   // Contenido para Admin de Grupo
   Widget _buildAdminContent(AdminController adminController) {
-    return Column(
-      children: [
-        // ── Tarjeta ID del grupo ─────────────────────────────
-        _buildGrupoIdCard(),
-        // Sección del logo (solo para admin de grupo)
-        LogoSection(
-          grupoId: widget.authProvider.grupoId,
-          grupoNombre: widget.authProvider.grupoNombre,
-          onChangeLogo: () => _cambiarLogo(context),
-          onDeleteLogo: () => _eliminarLogo(context),
-          onConfigureInterface: _configurarInterfaz,
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(
+          child: Column(
+            children: [
+              // ── Tarjeta ID del grupo ─────────────────────────────
+              _buildGrupoIdCard(),
+              // Sección del logo (solo para admin de grupo)
+              LogoSection(
+                grupoId: widget.authProvider.grupoId,
+                grupoNombre: widget.authProvider.grupoNombre,
+                onChangeLogo: () => _cambiarLogo(context),
+                onDeleteLogo: () => _eliminarLogo(context),
+                onConfigureInterface: _configurarInterfaz,
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
         ),
-        const SizedBox(height: 16),
-        // Lista de inspectores del grupo
-        Expanded(
+        // Lista de inspectores del grupo — ocupa el espacio restante
+        SliverFillRemaining(
           child: UsersListSection(
             grupoId: widget.authProvider.grupoId!,
             grupoNombre: widget.authProvider.grupoNombre,

@@ -804,6 +804,14 @@ Future<void> _restoreDraftIfAny() async {
                             },
                           ),
 
+                          // Botón generar reporte — visible desde que el estado abierto está guardado
+                          ConfigurableFeature(
+                            feature: 'habilitarReportes',
+                            child: _estadoAbiertoGuardado
+                                ? _buildGenerarReporteButton()
+                                : const SizedBox.shrink(),
+                          ),
+
                           if (_estadoAbiertoGuardado && !_casoCerrado)
                             _buildCerrarCasoButton(),
 
@@ -837,14 +845,6 @@ Future<void> _restoreDraftIfAny() async {
                                 _scheduleDraftSave();
                               },
                             ),
-
-                          // Botón de generar reporte configurable
-                          ConfigurableFeature(
-                            feature: 'habilitarReportes',
-                            child: _estadoAbiertoGuardado && _estadoCerradoGuardado
-                                ? _buildGenerarReporteButton()
-                                : const SizedBox.shrink(),
-                          ),
                         ],
                       ),
                     ),
@@ -984,17 +984,20 @@ Future<void> _restoreDraftIfAny() async {
         onPressed: () {
           Navigator.push(context,
           MaterialPageRoute(
-            builder: (context) => ReportScreen(casoId: _casoId!),
+            builder: (context) => ReportScreen(
+              casoId: _casoId!,
+              casoData: _casoData,
+            ),
           ),
           );
         },
         icon: const Icon(Icons.file_present, size: 24),
         label: const Text(
-          "Generar Reporte en Excel",
+          "Generar Reporte en PDF",
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
         style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.green,
+          backgroundColor: Colors.redAccent,
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 18),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
