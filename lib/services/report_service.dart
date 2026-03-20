@@ -17,6 +17,7 @@ class ReportService {
     bool incluirCerrados = true,
     required String empresaNombre,
     String? centroNombre,
+    String? grupoId,
   }) async {
 
     final casosFiltrados = _filtrarCasosPorDia(
@@ -46,6 +47,68 @@ class ReportService {
       }),
     );
 
+    // ── Cargar logo del grupo ────────────────────────────────────────────
+    pw.MemoryImage? imagenLogo;
+    if (grupoId != null) {
+      try {
+        final grupoDoc = await FirebaseFirestore.instance
+            .collection('grupos')
+            .doc(grupoId)
+            .get();
+        final String? logoUrl = _convertirUrlDrive(grupoDoc.data()?['logoUrl'] as String?);
+        if (logoUrl != null) {
+          final logoResp = await http.get(Uri.parse(logoUrl))
+              .timeout(const Duration(seconds: 15));
+          if (logoResp.statusCode == 200) {
+            imagenLogo = pw.MemoryImage(logoResp.bodyBytes);
+          }
+        }
+      } catch (e) {
+        print('Error cargando logo: $e');
+      }
+    }
+
+    // ── Cargar firma del inspector desde Firestore ───────────────────────
+    pw.MemoryImage? firmaInspector;
+    pw.MemoryImage? firmaCliente;
+    if (casosFiltrados.isNotEmpty) {
+      final primerDoc = casosFiltrados.first.data() as Map<String, dynamic>;
+      final primerEstadoAb = primerDoc['estadoAbierto'] as Map<String, dynamic>? ?? {};
+      // Firma inspector
+      final String? creadoPor = primerDoc['creadoPor'] as String?;
+      if (creadoPor != null) {
+        try {
+          final userDoc = await FirebaseFirestore.instance
+              .collection('users').doc(creadoPor).get();
+          final String? firmaUrl = _convertirUrlDrive(
+              userDoc.data()?['firmaUrl'] as String?);
+          if (firmaUrl != null) {
+            final firmaResp = await http.get(Uri.parse(firmaUrl))
+                .timeout(const Duration(seconds: 15));
+            if (firmaResp.statusCode == 200) {
+              firmaInspector = pw.MemoryImage(firmaResp.bodyBytes);
+            }
+          }
+        } catch (e) {
+          print('Error cargando firma inspector: $e');
+        }
+      }
+      // Firma cliente
+      final String? firmaClienteUrl = _convertirUrlDrive(
+          primerEstadoAb['firmaClienteUrl'] as String?);
+      if (firmaClienteUrl != null) {
+        try {
+          final firmaClienteResp = await http.get(Uri.parse(firmaClienteUrl))
+              .timeout(const Duration(seconds: 15));
+          if (firmaClienteResp.statusCode == 200) {
+            firmaCliente = pw.MemoryImage(firmaClienteResp.bodyBytes);
+          }
+        } catch (e) {
+          print('Error cargando firma cliente: $e');
+        }
+      }
+    }
+
     final pdf = pw.Document();
 
     pdf.addPage(
@@ -56,7 +119,7 @@ class ReportService {
           final widgets = <pw.Widget>[];
 
           // Encabezado general del día (una sola vez arriba)
-          widgets.add(_buildEncabezadoDiario(empresaNombre, centroNombre, fecha, supervisor));
+          widgets.add(_buildEncabezadoDiario(empresaNombre, centroNombre, fecha, supervisor, imagenLogo));
           widgets.add(pw.SizedBox(height: 10));
 
           // Un bloque por cada caso, en el mismo formato que PdfService
@@ -126,6 +189,16 @@ class ReportService {
           widgets.add(pw.SizedBox(height: 12));
           widgets.add(_buildResumen(casosFiltrados));
 
+          // Firmas al pie — nombre del inspector tomado del primer caso
+          final primerData = casosFiltrados.first.data() as Map<String, dynamic>;
+          final primerEstado = primerData['estadoAbierto'] as Map<String, dynamic>? ?? {};
+          final nombreInspector = supervisor ??
+              _val(primerEstado['usuarioNombre']) ??
+              _val(primerData['usuarioNombre']) ??
+              'Inspector';
+          widgets.add(pw.SizedBox(height: 16));
+          widgets.add(_buildFirmas(nombreInspector, centroNombre ?? empresaNombre, firmaInspector, firmaCliente));
+
           return widgets;
         },
       ),
@@ -147,6 +220,7 @@ class ReportService {
     bool incluirCerrados = true,
     required String empresaNombre,
     String? centroNombre,
+    String? grupoId,
   }) async {
     final casosFiltrados = _filtrarCasosPorDia(
       casos: casos,
@@ -174,6 +248,68 @@ class ReportService {
       }),
     );
 
+    // ── Cargar logo del grupo ────────────────────────────────────────────
+    pw.MemoryImage? imagenLogo2;
+    if (grupoId != null) {
+      try {
+        final grupoDoc = await FirebaseFirestore.instance
+            .collection('grupos')
+            .doc(grupoId)
+            .get();
+        final String? logoUrl = _convertirUrlDrive(grupoDoc.data()?['logoUrl'] as String?);
+        if (logoUrl != null) {
+          final logoResp = await http.get(Uri.parse(logoUrl))
+              .timeout(const Duration(seconds: 15));
+          if (logoResp.statusCode == 200) {
+            imagenLogo2 = pw.MemoryImage(logoResp.bodyBytes);
+          }
+        }
+      } catch (e) {
+        print('Error cargando logo: $e');
+      }
+    }
+
+    // ── Cargar firma del inspector desde Firestore ───────────────────────
+    pw.MemoryImage? firmaInspector2;
+    pw.MemoryImage? firmaCliente2;
+    if (casosFiltrados.isNotEmpty) {
+      final primerDoc2 = casosFiltrados.first.data() as Map<String, dynamic>;
+      final primerEstadoAb2 = primerDoc2['estadoAbierto'] as Map<String, dynamic>? ?? {};
+      // Firma inspector
+      final String? creadoPor2 = primerDoc2['creadoPor'] as String?;
+      if (creadoPor2 != null) {
+        try {
+          final userDoc2 = await FirebaseFirestore.instance
+              .collection('users').doc(creadoPor2).get();
+          final String? firmaUrl2 = _convertirUrlDrive(
+              userDoc2.data()?['firmaUrl'] as String?);
+          if (firmaUrl2 != null) {
+            final firmaResp2 = await http.get(Uri.parse(firmaUrl2))
+                .timeout(const Duration(seconds: 15));
+            if (firmaResp2.statusCode == 200) {
+              firmaInspector2 = pw.MemoryImage(firmaResp2.bodyBytes);
+            }
+          }
+        } catch (e) {
+          print('Error cargando firma inspector: $e');
+        }
+      }
+      // Firma cliente
+      final String? firmaClienteUrl2 = _convertirUrlDrive(
+          primerEstadoAb2['firmaClienteUrl'] as String?);
+      if (firmaClienteUrl2 != null) {
+        try {
+          final firmaClienteResp2 = await http.get(Uri.parse(firmaClienteUrl2))
+              .timeout(const Duration(seconds: 15));
+          if (firmaClienteResp2.statusCode == 200) {
+            firmaCliente2 = pw.MemoryImage(firmaClienteResp2.bodyBytes);
+          }
+        } catch (e) {
+          print('Error cargando firma cliente: $e');
+        }
+      }
+    }
+
     final pdf = pw.Document();
     pdf.addPage(
       pw.MultiPage(
@@ -181,7 +317,7 @@ class ReportService {
         margin: const pw.EdgeInsets.all(18),
         build: (pw.Context context) {
           final widgets = <pw.Widget>[];
-          widgets.add(_buildEncabezadoDiario(empresaNombre, centroNombre, fecha, supervisor));
+          widgets.add(_buildEncabezadoDiario(empresaNombre, centroNombre, fecha, supervisor, imagenLogo2));
           widgets.add(pw.SizedBox(height: 10));
           for (int i = 0; i < casosFiltrados.length; i++) {
             final doc = casosFiltrados[i];
@@ -212,7 +348,7 @@ class ReportService {
               widgets.add(pw.Divider(thickness: 0.5, color: PdfColors.grey400));
               widgets.add(pw.SizedBox(height: 4));
             }
-            widgets.add(pw.Text('Caso \${i + 1} de \${casosFiltrados.length}',
+            widgets.add(pw.Text('Caso ${i + 1} de ${casosFiltrados.length}',
                 style: pw.TextStyle(fontSize: 7, color: PdfColors.grey600)));
             widgets.add(pw.SizedBox(height: 3));
             widgets.add(_buildBloqueInspeccion(
@@ -225,6 +361,15 @@ class ReportService {
           }
           widgets.add(pw.SizedBox(height: 12));
           widgets.add(_buildResumen(casosFiltrados));
+          // Firmas al pie — nombre del inspector tomado del primer caso
+          final primerData2 = casosFiltrados.first.data() as Map<String, dynamic>;
+          final primerEstado2 = primerData2['estadoAbierto'] as Map<String, dynamic>? ?? {};
+          final nombreInspector2 = supervisor ??
+              _val(primerEstado2['usuarioNombre']) ??
+              _val(primerData2['usuarioNombre']) ??
+              'Inspector';
+          widgets.add(pw.SizedBox(height: 16));
+          widgets.add(_buildFirmas(nombreInspector2, centroNombre ?? empresaNombre, firmaInspector2, firmaCliente2));
           return widgets;
         },
       ),
@@ -256,22 +401,20 @@ class ReportService {
   }
 
   static pw.Widget _buildEncabezadoDiario(
-      String empresa, String? centro, DateTime fecha, String? supervisor) {
+      String empresa, String? centro, DateTime fecha, String? supervisor,
+      [pw.MemoryImage? logo]) {
     return pw.Table(
       border: pw.TableBorder.all(width: 0.5),
+      columnWidths: {
+        0: const pw.FlexColumnWidth(3),
+        1: const pw.FlexColumnWidth(1),
+        2: const pw.FixedColumnWidth(60),
+      },
       children: [
         pw.TableRow(children: [
           pw.Container(
             height: 36,
             padding: const pw.EdgeInsets.all(4),
-            child: pw.Center(
-              child: pw.Text(empresa,
-                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9),
-                  textAlign: pw.TextAlign.center),
-            ),
-          ),
-          pw.Container(
-            height: 36,
             child: pw.Column(
               mainAxisAlignment: pw.MainAxisAlignment.center,
               children: [
@@ -294,6 +437,16 @@ class ReportService {
                   style: const pw.TextStyle(fontSize: 7),
                   textAlign: pw.TextAlign.center),
             ),
+          ),
+          // Logo esquina superior derecha
+          pw.Container(
+            height: 36,
+            padding: const pw.EdgeInsets.all(3),
+            child: logo != null
+                ? pw.Image(logo, fit: pw.BoxFit.contain)
+                : pw.Center(
+                    child: pw.Text('LOGO',
+                        style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey))),
           ),
         ]),
       ],
@@ -404,8 +557,30 @@ class ReportService {
     String? supervisor,
     bool incluirCerrados = true,
     required String empresaNombre,
+    String? grupoId,
   }) async {
     
+    // ── Cargar logo del grupo ────────────────────────────────────────────
+    pw.MemoryImage? imagenLogoMensual;
+    if (grupoId != null) {
+      try {
+        final grupoDoc = await FirebaseFirestore.instance
+            .collection('grupos')
+            .doc(grupoId)
+            .get();
+        final String? logoUrl = _convertirUrlDrive(grupoDoc.data()?['logoUrl'] as String?);
+        if (logoUrl != null) {
+          final logoResp = await http.get(Uri.parse(logoUrl))
+              .timeout(const Duration(seconds: 15));
+          if (logoResp.statusCode == 200) {
+            imagenLogoMensual = pw.MemoryImage(logoResp.bodyBytes);
+          }
+        }
+      } catch (e) {
+        print('Error cargando logo: $e');
+      }
+    }
+
     final pdf = pw.Document();
     
     // Formato oficio landscape: 216mm x 330mm → landscape = 330mm x 216mm
@@ -420,7 +595,7 @@ class ReportService {
         margin: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         build: (pw.Context context) {
           return [
-            _buildHeaderMensualFormatoImagen(empresaNombre, mes, anio),
+            _buildHeaderMensualFormatoImagen(empresaNombre, mes, anio, imagenLogoMensual),
             pw.SizedBox(height: 6),
             _buildTablaCentrosFormatoImagen(casosPorCentro, mes, anio),
             _buildResumenMensual(casosPorCentro),
@@ -445,7 +620,28 @@ class ReportService {
     String? supervisor,
     bool incluirCerrados = true,
     required String empresaNombre,
+    String? grupoId,
   }) async {
+    // ── Cargar logo del grupo ────────────────────────────────────────────
+    pw.MemoryImage? imagenLogoMensual2;
+    if (grupoId != null) {
+      try {
+        final grupoDoc = await FirebaseFirestore.instance
+            .collection('grupos')
+            .doc(grupoId)
+            .get();
+        final String? logoUrl = _convertirUrlDrive(grupoDoc.data()?['logoUrl'] as String?);
+        if (logoUrl != null) {
+          final logoResp = await http.get(Uri.parse(logoUrl))
+              .timeout(const Duration(seconds: 15));
+          if (logoResp.statusCode == 200) {
+            imagenLogoMensual2 = pw.MemoryImage(logoResp.bodyBytes);
+          }
+        }
+      } catch (e) {
+        print('Error cargando logo: $e');
+      }
+    }
     final pdf = pw.Document();
     const pageFormat = PdfPageFormat(
       330 * PdfPageFormat.mm,
@@ -456,7 +652,7 @@ class ReportService {
         pageFormat: pageFormat,
         margin: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         build: (pw.Context context) => [
-          _buildHeaderMensualFormatoImagen(empresaNombre, mes, anio),
+          _buildHeaderMensualFormatoImagen(empresaNombre, mes, anio, imagenLogoMensual2),
           pw.SizedBox(height: 6),
           _buildTablaCentrosFormatoImagen(casosPorCentro, mes, anio),
           _buildResumenMensual(casosPorCentro),
@@ -505,7 +701,8 @@ class ReportService {
 
   // ─── HEADER MENSUAL — formato imagen ────────────────────────────────────────
 
-  static pw.Widget _buildHeaderMensualFormatoImagen(String empresa, int mes, int anio) {
+  static pw.Widget _buildHeaderMensualFormatoImagen(String empresa, int mes, int anio,
+      [pw.MemoryImage? logo]) {
     return pw.Table(
       border: pw.TableBorder.all(width: 0.5),
       columnWidths: {
@@ -552,16 +749,16 @@ class ReportService {
                 ],
               ),
             ),
+            // Logo esquina superior derecha
             pw.Container(
               height: 45,
               padding: const pw.EdgeInsets.all(4),
-              child: pw.Center(
-                child: pw.Text(
-                  'VERSION 2',
-                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8),
-                  textAlign: pw.TextAlign.center,
-                ),
-              ),
+              child: logo != null
+                  ? pw.Image(logo, fit: pw.BoxFit.contain)
+                  : pw.Center(
+                      child: pw.Text('VERSION 2',
+                          style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8),
+                          textAlign: pw.TextAlign.center)),
             ),
           ],
         ),
@@ -729,4 +926,79 @@ class ReportService {
     ];
     return meses[mes - 1];
   }
+
+  // ── Sección de firmas al pie del reporte ─────────────────────────────────
+  static pw.Widget _buildFirmas(String inspectorNombre, String centroNombre,
+      [pw.MemoryImage? firmaInspector, pw.MemoryImage? firmaCliente]) =>
+      pw.Table(
+    border: pw.TableBorder.all(width: 0.5),
+    columnWidths: {
+      0: const pw.FlexColumnWidth(1),
+      1: const pw.FlexColumnWidth(1),
+    },
+    children: [
+      // Fila encabezado
+      pw.TableRow(
+        decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+        children: [
+          pw.Padding(
+            padding: const pw.EdgeInsets.all(4),
+            child: pw.Text(
+              'FIRMA DEL INSPECTOR',
+              style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8),
+              textAlign: pw.TextAlign.center,
+            ),
+          ),
+          pw.Padding(
+            padding: const pw.EdgeInsets.all(4),
+            child: pw.Text(
+              'FIRMA DEL RESPONSABLE / CLIENTE',
+              style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8),
+              textAlign: pw.TextAlign.center,
+            ),
+          ),
+        ],
+      ),
+      // Fila imágenes de firma
+      pw.TableRow(children: [
+        pw.Container(
+          height: 50,
+          padding: const pw.EdgeInsets.all(4),
+          child: pw.Center(
+            child: firmaInspector != null
+                ? pw.Image(firmaInspector, fit: pw.BoxFit.contain)
+                : pw.SizedBox(),
+          ),
+        ),
+        pw.Container(
+          height: 50,
+          padding: const pw.EdgeInsets.all(4),
+          child: pw.Center(
+            child: firmaCliente != null
+                ? pw.Image(firmaCliente, fit: pw.BoxFit.contain)
+                : pw.SizedBox(),
+          ),
+        ),
+      ]),
+      // Fila nombre
+      pw.TableRow(children: [
+        pw.Padding(
+          padding: const pw.EdgeInsets.all(4),
+          child: pw.Text(
+            inspectorNombre,
+            style: const pw.TextStyle(fontSize: 8),
+            textAlign: pw.TextAlign.center,
+          ),
+        ),
+        pw.Padding(
+          padding: const pw.EdgeInsets.all(4),
+          child: pw.Text(
+            centroNombre,
+            style: const pw.TextStyle(fontSize: 8),
+            textAlign: pw.TextAlign.center,
+          ),
+        ),
+      ]),
+    ],
+  );
 }

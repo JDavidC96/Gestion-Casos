@@ -92,9 +92,26 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
   Future<void> _handleSave() async {
     if (!_formKey.currentState!.validate()) return;
 
+    // Validar que los IDs críticos no estén vacíos
+    final grupoId = widget.grupoId ?? '';
+    final centroId = widget.centroId ?? '';
+    if (grupoId.isEmpty || centroId.isEmpty || widget.empresaId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Error: datos incompletos (grupo=$grupoId, centro=$centroId, empresa=${widget.empresaId}). Cierra y vuelve a intentar.',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
       final casoData = {
         'empresaId': widget.empresaId,
         'empresaNombre': widget.empresa.nombre,
@@ -102,11 +119,12 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
         'tipoRiesgo': _selectedCategoria,
         'subgrupoRiesgo': _selectedSubgrupo,
         'cerrado': false,
-        'centroId': widget.centroId,
+        'centroId': centroId,
         'centroNombre': widget.centroNombre,
-        'grupoId': widget.grupoId,
+        'grupoId': grupoId,
         'grupoNombre': widget.grupoNombre,
         'numeroCategoria': RiskData.getNumeroCategoria(_selectedCategoria),
+        'creadoPor': authProvider.userData?['uid'],
       };
 
       // Solo agregar nivel de peligro si está habilitado en la configuración
@@ -115,9 +133,9 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
       }
 
       await FirebaseService.createCaso(
-        widget.grupoId ?? '',
+        grupoId,
         widget.empresaId,
-        widget.centroId ?? '',
+        centroId,
         casoData,
       );
 

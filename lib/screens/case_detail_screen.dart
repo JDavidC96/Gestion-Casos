@@ -54,6 +54,7 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
   final TextEditingController _ubicacionTextoCtrl = TextEditingController();
   // Firma del cliente — estado abierto
   Uint8List? _firmaClienteAbierto;
+  String? _firmaClienteAbiertoUrl;
   String? _nombreClienteAbierto;
 
   // Estado Cerrado
@@ -67,12 +68,12 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
   String? _responsableCerradoNombre;
   // Firma del cliente — estado cerrado
   Uint8List? _firmaClienteCerrado;
+  String? _firmaClienteCerradoUrl;
   String? _nombreClienteCerrado;
 
   // Información del usuario actual
   String? _usuarioId;
   String? _usuarioNombre;
-  Uint8List? _usuarioFirma;
 
   final SignatureController _signatureController = SignatureController(
     penStrokeWidth: 3,
@@ -99,13 +100,6 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
 
   void _nivelPeligroDeshabilitado(String? value) {
     // No hace nada - se llama cuando el nivel de peligro está deshabilitado
-  }
-
-  void _firmaDeshabilitada() {
-    // No hace nada - se llama cuando las firmas están deshabilitadas
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('La función de firmas está deshabilitada')),
-    );
   }
 
   Map<String, dynamic> _buildDraft() {
@@ -223,15 +217,6 @@ Future<void> _restoreDraftIfAny() async {
       _responsableAbiertoNombre = _usuarioNombre;
       _responsableCerradoNombre = _usuarioNombre;
 
-      // Firma desde base64 (si existe en el perfil)
-      if (userData['firmaBase64'] != null) {
-        _usuarioFirma = CameraService.base64ToFirma(userData['firmaBase64']);
-        if (mounted) setState(() {
-          _firmaAbierto = _usuarioFirma;
-          _firmaCerrado = _usuarioFirma;
-        });
-      }
-
       // Firma desde Drive URL (guardada en el perfil del inspector)
       final firmaUrl = userData['firmaUrl'] as String?;
       if (firmaUrl != null) {
@@ -241,9 +226,8 @@ Future<void> _restoreDraftIfAny() async {
         final bytes = await _descargarFirmaDesdeDrive(firmaUrl);
         if (bytes != null && mounted) {
           setState(() {
-            _usuarioFirma = bytes;
-            _firmaAbierto ??= bytes;   // solo si no había firma base64
-            _firmaCerrado ??= bytes;
+            _firmaAbierto = bytes;
+            _firmaCerrado = bytes;
           });
         }
       }
@@ -298,13 +282,8 @@ Future<void> _restoreDraftIfAny() async {
             _ubicacionTextoCtrl.text = estadoAbierto['ubicacionTexto'] ?? '';
             _nombreClienteAbierto = estadoAbierto['nombreCliente'];
             
-            if (estadoAbierto['firmaClienteBase64'] != null) {
-              _firmaClienteAbierto = CameraService.base64ToFirma(estadoAbierto['firmaClienteBase64']);
-            }
-            
-            if (estadoAbierto['firmaBase64'] != null) {
-              _firmaAbierto = CameraService.base64ToFirma(estadoAbierto['firmaBase64']);
-            }
+            // URL de firma cliente — la imagen se descarga en _cargarFirmasDesdeDrive
+            _firmaClienteAbiertoUrl = estadoAbierto['firmaClienteUrl'] as String?;
             // Cargar URL Drive de firma del inspector si existe en Firestore
             if (estadoAbierto['firmaUrl'] != null) {
               _firmaAbiertoUrl = estadoAbierto['firmaUrl'] as String?;
@@ -336,13 +315,8 @@ Future<void> _restoreDraftIfAny() async {
             _responsableCerradoNombre = estadoCerrado['usuarioNombre'] ?? _usuarioNombre;
             _nombreClienteCerrado = estadoCerrado['nombreCliente'];
 
-            if (estadoCerrado['firmaClienteBase64'] != null) {
-              _firmaClienteCerrado = CameraService.base64ToFirma(estadoCerrado['firmaClienteBase64']);
-            }
-            
-            if (estadoCerrado['firmaBase64'] != null) {
-              _firmaCerrado = CameraService.base64ToFirma(estadoCerrado['firmaBase64']);
-            }
+            // URL de firma cliente — la imagen se descarga en _cargarFirmasDesdeDrive
+            _firmaClienteCerradoUrl = estadoCerrado['firmaClienteUrl'] as String?;
             // Cargar URL Drive de firma del inspector si existe en Firestore
             if (estadoCerrado['firmaUrl'] != null) {
               _firmaCerradoUrl = estadoCerrado['firmaUrl'] as String?;
@@ -378,7 +352,7 @@ Future<void> _restoreDraftIfAny() async {
     }
   }
 
-  /// Descarga las firmas del inspector desde Drive y actualiza el estado.
+  /// Descarga las firmas del inspector y del cliente desde Drive y actualiza el estado.
   Future<void> _cargarFirmasDesdeDrive() async {
     if (_firmaAbiertoUrl != null && _firmaAbierto == null) {
       final bytes = await _descargarFirmaDesdeDrive(_firmaAbiertoUrl);
@@ -387,6 +361,14 @@ Future<void> _restoreDraftIfAny() async {
     if (_firmaCerradoUrl != null && _firmaCerrado == null) {
       final bytes = await _descargarFirmaDesdeDrive(_firmaCerradoUrl);
       if (bytes != null && mounted) setState(() => _firmaCerrado = bytes);
+    }
+    if (_firmaClienteAbiertoUrl != null && _firmaClienteAbierto == null) {
+      final bytes = await _descargarFirmaDesdeDrive(_firmaClienteAbiertoUrl);
+      if (bytes != null && mounted) setState(() => _firmaClienteAbierto = bytes);
+    }
+    if (_firmaClienteCerradoUrl != null && _firmaClienteCerrado == null) {
+      final bytes = await _descargarFirmaDesdeDrive(_firmaClienteCerradoUrl);
+      if (bytes != null && mounted) setState(() => _firmaClienteCerrado = bytes);
     }
   }
 
@@ -476,17 +458,6 @@ Future<void> _restoreDraftIfAny() async {
     }
   }
 
-  void _capturarFirma() {
-    final configProvider = Provider.of<InterfaceConfigProvider>(context, listen: false);
-    if (!configProvider.isFeatureEnabled('habilitarFirmas')) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('La función de firmas está deshabilitada')),
-      );
-      return;
-    }
-    // Aquí iría la lógica para capturar firma si estuviera habilitada
-  }
-
   Future<void> _guardarEstadoAbierto() async {
     if (_casoId == null) return;
 
@@ -511,7 +482,7 @@ Future<void> _restoreDraftIfAny() async {
     final configProvider = Provider.of<InterfaceConfigProvider>(context, listen: false);
     final mostrarNivelPeligro = configProvider.isFeatureEnabled('mostrarnivelPeligro');
     
-    if (mostrarNivelPeligro && (_nivelPeligro.isEmpty || _nivelPeligro == 'No aplica')) {
+    if (mostrarNivelPeligro && (_nivelPeligro.isEmpty)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Selecciona un Nivel de peligro válido")),
       );
@@ -548,8 +519,6 @@ Future<void> _restoreDraftIfAny() async {
         'descripcionHallazgo': _descripcionHallazgo.trim(),
         'recomendacionesControl': _recomendacionesControl?.trim(),
         'fotoUrl': _fotoAbiertoUrl,
-        'firmaBase64': _usuarioFirma != null ? CameraService.firmaToBase64(_usuarioFirma!) : null,
-        if (_firmaAbiertoUrl != null) 'firmaUrl': _firmaAbiertoUrl,
         'usuarioId': _usuarioId,
         'usuarioNombre': _usuarioNombre,
         'ubicacionTexto': _ubicacionTextoCtrl.text.trim(),
@@ -561,9 +530,7 @@ Future<void> _restoreDraftIfAny() async {
             : null,
         'guardado': true,
         'fechaGuardado': FieldValue.serverTimestamp(),
-        // Firma del cliente
-        if (_firmaClienteAbierto != null)
-          'firmaClienteBase64': CameraService.firmaToBase64(_firmaClienteAbierto!),
+        // Firma del cliente (solo URL)
         if (firmaClienteUrl != null) 'firmaClienteUrl': firmaClienteUrl,
         if (_nombreClienteAbierto != null && _nombreClienteAbierto!.isNotEmpty)
           'nombreCliente': _nombreClienteAbierto,
@@ -657,8 +624,6 @@ Future<void> _restoreDraftIfAny() async {
       final estadoCerradoData = {
         'descripcionSolucion': _descripcionSolucion.trim(),
         'fotoUrl': _fotoCerradoUrl,
-        'firmaBase64': _usuarioFirma != null ? CameraService.firmaToBase64(_usuarioFirma!) : null,
-        if (_firmaCerradoUrl != null) 'firmaUrl': _firmaCerradoUrl,
         'usuarioId': _usuarioId,
         'usuarioNombre': _usuarioNombre,
         'ubicacion': _ubicacionCerrado != null
@@ -669,9 +634,7 @@ Future<void> _restoreDraftIfAny() async {
             : null,
         'guardado': true,
         'fechaGuardado': FieldValue.serverTimestamp(),
-        // Firma del cliente
-        if (_firmaClienteCerrado != null)
-          'firmaClienteBase64': CameraService.firmaToBase64(_firmaClienteCerrado!),
+        // Firma del cliente (solo URL)
         if (firmaClienteUrl != null) 'firmaClienteUrl': firmaClienteUrl,
         if (_nombreClienteCerrado != null && _nombreClienteCerrado!.isNotEmpty)
           'nombreCliente': _nombreClienteCerrado,
@@ -717,7 +680,6 @@ Future<void> _restoreDraftIfAny() async {
     final configProvider = Provider.of<InterfaceConfigProvider>(context);
     final mostrarNivelPeligro = configProvider.isFeatureEnabled('mostrarnivelPeligro');
     final habilitarFotos = configProvider.isFeatureEnabled('habilitarFotos');
-    final habilitarFirmas = configProvider.isFeatureEnabled('habilitarFirmas');
 
     // Callbacks condicionales
     final onTomarFotoAbierto = habilitarFotos ? () => _tomarFoto(esEstadoAbierto: true) : _tomarFotoDeshabilitada;

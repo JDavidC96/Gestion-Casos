@@ -53,7 +53,7 @@ class CaseCard extends StatelessWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => SafeArea(
+      builder: (sheetContext) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -93,8 +93,8 @@ class CaseCard extends StatelessWidget {
                 title: const Text('Editar caso'),
                 subtitle: const Text('Modificar nombre o tipo de riesgo'),
                 onTap: () {
-                  Navigator.pop(context);
-                  onEdit!();
+                  Navigator.pop(sheetContext);
+                  Future.microtask(() => onEdit!());
                 },
               ),
             if (onDelete != null)
@@ -113,8 +113,8 @@ class CaseCard extends StatelessWidget {
                 ),
                 subtitle: const Text('Esta acción no se puede deshacer'),
                 onTap: () {
-                  Navigator.pop(context);
-                  onDelete!();
+                  Navigator.pop(sheetContext);
+                  Future.microtask(() => onDelete!());
                 },
               ),
             const SizedBox(height: 8),

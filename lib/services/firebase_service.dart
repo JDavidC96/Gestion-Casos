@@ -371,6 +371,7 @@ class FirebaseService {
     casoData['grupoId'] = grupoId;
     casoData['empresaId'] = empresaId;
     casoData['centroId'] = centroId;
+    casoData['creadoPor'] = FirebaseAuth.instance.currentUser?.uid;
     final doc = await _casosRef(grupoId, empresaId, centroId).add(casoData);
     return doc.id;
   }

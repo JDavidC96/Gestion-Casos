@@ -282,6 +282,7 @@ void _mostrarDialogoReporteMensual() {
                         supervisor: supervisorSeleccionado,
                         incluirCerrados: incluirCerrados,
                         empresaNombre: _empresa?.nombre ?? 'Empresa',
+                        grupoId: _grupoId,
                       );
                     } else {
                       await ReportService.generarReporteMensualCentrosPDF(
@@ -291,6 +292,7 @@ void _mostrarDialogoReporteMensual() {
                         supervisor: supervisorSeleccionado,
                         incluirCerrados: incluirCerrados,
                         empresaNombre: _empresa?.nombre ?? 'Empresa',
+                        grupoId: _grupoId,
                       );
                     }
                     if (mounted) {

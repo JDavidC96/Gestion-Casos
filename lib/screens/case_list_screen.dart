@@ -128,7 +128,7 @@ class _CaseListScreenState extends State<CaseListScreen> {
         empresaId: _empresaId,
         centroId: _centroId,
         centroNombre: _centroNombre,
-        grupoId: authProvider.grupoId,
+        grupoId: authProvider.grupoId ?? _grupoId,
         grupoNombre: authProvider.grupoNombre,
       ),
     );
@@ -217,7 +217,7 @@ class _CaseListScreenState extends State<CaseListScreen> {
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('Error al actualizar: \$e'),
+                      content: Text('Error al actualizar: $e'),
                       backgroundColor: Colors.red,
                     ),
                   );
@@ -448,6 +448,7 @@ void _mostrarDialogoReporteDiario() {
                         incluirCerrados: incluirCerrados,
                         empresaNombre: _empresa.nombre,
                         centroNombre: _centroNombre,
+                        grupoId: _grupoId,
                       );
                     } else {
                       await ReportService.generarReporteCasosPDF(
@@ -457,6 +458,7 @@ void _mostrarDialogoReporteDiario() {
                         incluirCerrados: incluirCerrados,
                         empresaNombre: _empresa.nombre,
                         centroNombre: _centroNombre,
+                        grupoId: _grupoId,
                       );
                     }
                     if (mounted) {
@@ -473,7 +475,7 @@ void _mostrarDialogoReporteDiario() {
                     if (Navigator.canPop(context)) Navigator.pop(context);
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Error: \$e'), backgroundColor: Colors.red),
+                        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
                       );
                     }
                   }

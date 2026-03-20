@@ -38,28 +38,14 @@ class _ReportScreenState extends State<ReportScreen> {
   }
 
   Future<void> _loadInitialData() async {
-    // Si ya vienen los datos del caso desde la pantalla anterior, usarlos directamente
-    if (widget.casoData != null) {
-      setState(() {
-        _casoData = widget.casoData;
-        try {
-          _casoObjeto = Case.fromMap(widget.casoData!);
-        } catch (e) {
-          print("Error al mapear Case: $e");
-          _casoObjeto = null;
-        }
-        _isLoading = false;
-      });
-      return;
-    }
-
-    // Fallback: buscar en Firestore con el path completo
     final args = ModalRoute.of(context)?.settings.arguments as Map?;
     final String? id        = widget.casoId    ?? args?['casoId'];
     final String? grupoId   = widget.grupoId   ?? args?['grupoId'];
     final String? empresaId = widget.empresaId ?? args?['empresaId'];
     final String? centroId  = widget.centroId  ?? args?['centroId'];
 
+    // Si tenemos el path completo, siempre recargar desde Firestore
+    // para garantizar que estadoAbierto.firmaClienteUrl esté presente
     if (id != null &&
         grupoId != null && grupoId.isNotEmpty &&
         empresaId != null && empresaId.isNotEmpty &&
@@ -68,7 +54,7 @@ class _ReportScreenState extends State<ReportScreen> {
         final doc = await FirebaseService.getCasoById(grupoId, empresaId, centroId, id);
         if (doc.exists) {
           final data = doc.data() as Map<String, dynamic>;
-          setState(() {
+          if (mounted) setState(() {
             _casoData = data;
             try {
               _casoObjeto = Case.fromMap(data);
@@ -80,7 +66,29 @@ class _ReportScreenState extends State<ReportScreen> {
         }
       } catch (e) {
         print("Error cargando de Firebase: $e");
+        // Fallback: usar casoData pasado por navegación si existe
+        if (widget.casoData != null && mounted) {
+          setState(() {
+            _casoData = widget.casoData;
+            try {
+              _casoObjeto = Case.fromMap(widget.casoData!);
+            } catch (e) {
+              _casoObjeto = null;
+            }
+          });
+        }
       }
+    } else if (widget.casoData != null) {
+      // Sin IDs completos, usar lo que llegó por navegación
+      if (mounted) setState(() {
+        _casoData = widget.casoData;
+        try {
+          _casoObjeto = Case.fromMap(widget.casoData!);
+        } catch (e) {
+          print("Error al mapear Case: $e");
+          _casoObjeto = null;
+        }
+      });
     }
 
     if (mounted) setState(() => _isLoading = false);
