@@ -27,6 +27,11 @@ class CaseStateCardFirebase extends StatefulWidget {
   final bool tomandoFoto;
   final bool subiendoFoto;
 
+  // Parámetros de configuración del grupo
+  final bool habilitarFotos;
+  final bool habilitarFirmas;
+  final bool mostrarNivelPeligro;
+
   // Firma del cliente (nuevos)
   final ValueChanged<Uint8List?>? onFirmaClienteChanged;
   final ValueChanged<String>? onNombreClienteChanged;
@@ -59,6 +64,9 @@ class CaseStateCardFirebase extends StatefulWidget {
     this.onNombreClienteChanged,
     this.firmaCliente,
     this.nombreCliente,
+    this.habilitarFotos = true,
+    this.habilitarFirmas = true,
+    this.mostrarNivelPeligro = true,
   });
 
   @override
@@ -138,24 +146,26 @@ class _CaseStateCardFirebaseState extends State<CaseStateCardFirebase> {
               const SizedBox(height: 16),
               _buildUbicacionField(),
               const SizedBox(height: 16),
-              RiskLevelSelector(
-                nivelSeleccionado: widget.nivelPeligro,
-                onChanged: widget.bloqueado ? null : widget.onnivelPeligroChanged,
-                enabled: !widget.bloqueado,
-              ),
-              const SizedBox(height: 16),
+              if (widget.mostrarNivelPeligro) ...[  
+                RiskLevelSelector(
+                  nivelSeleccionado: widget.nivelPeligro,
+                  onChanged: widget.bloqueado ? null : widget.onnivelPeligroChanged,
+                  enabled: !widget.bloqueado,
+                ),
+                const SizedBox(height: 16),
+              ],
               _buildRecomendacionesControl(),
               const SizedBox(height: 16),
-              if (widget.firma != null && widget.usuarioNombre != null)
+              if (widget.habilitarFirmas && widget.firma != null && widget.usuarioNombre != null)
                 _buildFirmaInspectorInfo(),
-              const SizedBox(height: 16),
-              _buildFirmaClienteSection(),
+              if (widget.habilitarFirmas) const SizedBox(height: 16),
+              if (widget.habilitarFirmas) _buildFirmaClienteSection(),
               const SizedBox(height: 16),
               if (!widget.bloqueado) _buildActionButtons(),
               if (!widget.bloqueado) const SizedBox(height: 16),
-              if (widget.fotoPath != null || widget.fotoUrl != null)
+              if (widget.habilitarFotos && (widget.fotoPath != null || widget.fotoUrl != null))
                 _buildFotoPreview(),
-              if (widget.firma != null) _buildFirmaInspectorPreview(),
+              if (widget.habilitarFirmas && widget.firma != null) _buildFirmaInspectorPreview(),
             ],
           ),
         ),
@@ -500,22 +510,23 @@ class _CaseStateCardFirebaseState extends State<CaseStateCardFirebase> {
       spacing: 10,
       runSpacing: 10,
       children: [
-        ElevatedButton.icon(
-          onPressed: (widget.tomandoFoto || widget.subiendoFoto) ? null : widget.onTomarFoto,
-          icon: (widget.tomandoFoto || widget.subiendoFoto)
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2))
-              : const Icon(Icons.camera_alt),
-          label: widget.tomandoFoto
-              ? const Text("Tomando...")
-              : widget.subiendoFoto
-                  ? const Text("Subiendo...")
-                  : const Text("Tomar Foto"),
-          style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue, foregroundColor: Colors.white),
-        ),
+        if (widget.habilitarFotos)
+          ElevatedButton.icon(
+            onPressed: (widget.tomandoFoto || widget.subiendoFoto) ? null : widget.onTomarFoto,
+            icon: (widget.tomandoFoto || widget.subiendoFoto)
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.camera_alt),
+            label: widget.tomandoFoto
+                ? const Text("Tomando...")
+                : widget.subiendoFoto
+                    ? const Text("Subiendo...")
+                    : const Text("Tomar Foto"),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue, foregroundColor: Colors.white),
+          ),
         // Botón "Firma" eliminado — era no-op
         ElevatedButton.icon(
           onPressed: widget.onGuardar,

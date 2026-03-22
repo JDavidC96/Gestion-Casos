@@ -139,6 +139,7 @@ class _CaseListScreenState extends State<CaseListScreen> {
       context,
       '/closedCases',
       arguments: {
+        "grupoId": _grupoId,
         "empresa": _empresa,
         "empresaId": _empresaId,
         "centroId": _centroId,
@@ -770,10 +771,10 @@ void _mostrarDialogoReporteDiario() {
         ),
       ),
       floatingActionButton: 
-          // Mostrar FAB si tiene permisos Y está habilitado en configuración
-          (_puedeCrearCasos(authProvider) && 
-          configProvider.isFeatureEnabled('habilitarCreacionCasos'))
+          // Mostrar FAB si tiene permisos
+          _puedeCrearCasos(authProvider)
             ? FloatingActionButton(
+                heroTag: 'fab_case_list',
                 onPressed: _openAddCaseModal,
                 backgroundColor: Colors.orange,
                 foregroundColor: Colors.white,

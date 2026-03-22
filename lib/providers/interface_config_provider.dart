@@ -1,5 +1,4 @@
 // lib/providers/interface_config_provider.dart
-import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/interface_config_service.dart';
 
@@ -7,29 +6,41 @@ class InterfaceConfigProvider with ChangeNotifier {
   Map<String, dynamic> _currentConfig = {};
   bool _isLoading = false;
   String? _errorMessage;
+  String? _loadedGrupoId; // Grupo cuya config está actualmente en memoria
 
   Map<String, dynamic> get currentConfig => _currentConfig;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
+  String? get loadedGrupoId => _loadedGrupoId;
 
-  // Cargar configuración para un grupo
+  // Cargar configuración para un grupo.
+  // Si ya está cargada la config de ese mismo grupo, no hace nada.
   Future<void> loadConfig(String grupoId) async {
+    if (grupoId.isEmpty) return;
+    if (_loadedGrupoId == grupoId && _currentConfig.isNotEmpty) return;
+
     _isLoading = true;
     _errorMessage = null;
-    // Diferir la notificación para evitar "setState during build" cuando
-    // este método es invocado desde didChangeDependencies o initState.
-    scheduleMicrotask(notifyListeners);
+    notifyListeners();
 
     try {
       _currentConfig = await InterfaceConfigService.getConfigInterfaz(grupoId);
+      _loadedGrupoId = grupoId;
       _errorMessage = null;
     } catch (e) {
       _errorMessage = 'Error cargando configuración: $e';
       _currentConfig = {};
+      _loadedGrupoId = null;
     } finally {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  // Forzar recarga (útil tras guardar cambios en interface_config_screen)
+  Future<void> reloadConfig(String grupoId) async {
+    _loadedGrupoId = null;
+    await loadConfig(grupoId);
   }
 
   // Guardar configuración
@@ -99,11 +110,12 @@ class InterfaceConfigProvider with ChangeNotifier {
     return _currentConfig['ordenamiento'] ?? 'fecha';
   }
 
-  // Limpiar estado
+  // Limpiar estado (llamar al hacer logout para no contaminar otros grupos)
   void clear() {
     _currentConfig = {};
     _errorMessage = null;
     _isLoading = false;
+    _loadedGrupoId = null;
     notifyListeners();
   }
 }

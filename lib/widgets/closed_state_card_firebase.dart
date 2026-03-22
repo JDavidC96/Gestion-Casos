@@ -21,6 +21,10 @@ class ClosedStateCardFirebase extends StatefulWidget {
   final bool tomandoFoto;
   final bool subiendoFoto;
 
+  // Parámetros de configuración del grupo
+  final bool habilitarFotos;
+  final bool habilitarFirmas;
+
   // Firma del cliente (nuevos)
   final ValueChanged<Uint8List?>? onFirmaClienteChanged;
   final ValueChanged<String>? onNombreClienteChanged;
@@ -47,6 +51,8 @@ class ClosedStateCardFirebase extends StatefulWidget {
     this.onNombreClienteChanged,
     this.firmaCliente,
     this.nombreCliente,
+    this.habilitarFotos = true,
+    this.habilitarFirmas = true,
   });
 
   @override
@@ -124,16 +130,16 @@ class _ClosedStateCardFirebaseState extends State<ClosedStateCardFirebase> {
               const SizedBox(height: 20),
               _buildDescripcionSolucion(),
               const SizedBox(height: 16),
-              if (widget.firma != null && widget.usuarioNombre != null)
+              if (widget.habilitarFirmas && widget.firma != null && widget.usuarioNombre != null)
                 _buildFirmaInspectorInfo(),
-              const SizedBox(height: 16),
-              _buildFirmaClienteSection(),
+              if (widget.habilitarFirmas) const SizedBox(height: 16),
+              if (widget.habilitarFirmas) _buildFirmaClienteSection(),
               const SizedBox(height: 16),
               if (!widget.bloqueado) _buildActionButtons(),
               if (!widget.bloqueado) const SizedBox(height: 16),
-              if (widget.fotoPath != null || widget.fotoUrl != null)
+              if (widget.habilitarFotos && (widget.fotoPath != null || widget.fotoUrl != null))
                 _buildFotoPreview(),
-              if (widget.firma != null || widget.firmaUrl != null)
+              if (widget.habilitarFirmas && (widget.firma != null || widget.firmaUrl != null))
                 _buildFirmaInspectorPreview(),
             ],
           ),
@@ -436,27 +442,28 @@ class _ClosedStateCardFirebaseState extends State<ClosedStateCardFirebase> {
       spacing: 10,
       runSpacing: 10,
       children: [
-        ElevatedButton.icon(
-          onPressed: (widget.tomandoFoto || widget.subiendoFoto) ? null : widget.onTomarFoto,
-          icon: widget.tomandoFoto
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2))
-              : widget.subiendoFoto
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.camera_alt),
-          label: widget.tomandoFoto
-              ? const Text("Tomando...")
-              : widget.subiendoFoto
-                  ? const Text("Subiendo...")
-                  : const Text("Tomar Foto"),
-          style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green, foregroundColor: Colors.white),
-        ),
+        if (widget.habilitarFotos)
+          ElevatedButton.icon(
+            onPressed: (widget.tomandoFoto || widget.subiendoFoto) ? null : widget.onTomarFoto,
+            icon: widget.tomandoFoto
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : widget.subiendoFoto
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.camera_alt),
+            label: widget.tomandoFoto
+                ? const Text("Tomando...")
+                : widget.subiendoFoto
+                    ? const Text("Subiendo...")
+                    : const Text("Tomar Foto"),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green, foregroundColor: Colors.white),
+          ),
         // Botón "Firma" eliminado — era no-op
         ElevatedButton.icon(
           onPressed: widget.onGuardar,

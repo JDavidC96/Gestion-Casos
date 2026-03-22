@@ -480,7 +480,7 @@ Future<void> _restoreDraftIfAny() async {
     }
 
     final configProvider = Provider.of<InterfaceConfigProvider>(context, listen: false);
-    final mostrarNivelPeligro = configProvider.isFeatureEnabled('mostrarnivelPeligro');
+    final mostrarNivelPeligro = configProvider.isFeatureEnabled('mostrarNivelPeligroEnDetalle');
     
     if (mostrarNivelPeligro && (_nivelPeligro.isEmpty)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -678,7 +678,7 @@ Future<void> _restoreDraftIfAny() async {
     final empresaNombre = _casoData?['empresaNombre'] ?? "Sin empresa";
     final nombre = _casoData?['nombre'] ?? "Caso sin descripción";
     final configProvider = Provider.of<InterfaceConfigProvider>(context);
-    final mostrarNivelPeligro = configProvider.isFeatureEnabled('mostrarnivelPeligro');
+    final mostrarNivelPeligro = configProvider.isFeatureEnabled('mostrarNivelPeligroEnDetalle');
     final habilitarFotos = configProvider.isFeatureEnabled('habilitarFotos');
 
     // Callbacks condicionales
@@ -738,6 +738,10 @@ Future<void> _restoreDraftIfAny() async {
                             bloqueado: _estadoAbiertoGuardado,
                             usuarioNombre: _responsableAbiertoNombre,
                             ubicacionController: _ubicacionTextoCtrl,
+                            // Config del grupo
+                            habilitarFotos: habilitarFotos,
+                            habilitarFirmas: configProvider.isFeatureEnabled('habilitarFirmas'),
+                            mostrarNivelPeligro: mostrarNivelPeligro,
                             onUbicacionChanged: (value) {
                               _scheduleDraftSave();
                             },
@@ -788,6 +792,9 @@ Future<void> _restoreDraftIfAny() async {
                               firmaUrl: _firmaCerradoUrl,
                               bloqueado: _estadoCerradoGuardado,
                               usuarioNombre: _responsableCerradoNombre,
+                              // Config del grupo
+                              habilitarFotos: habilitarFotos,
+                              habilitarFirmas: configProvider.isFeatureEnabled('habilitarFirmas'),
                               onDescripcionSolucionChanged: (value) {
                                 setState(() => _descripcionSolucion = value);
                                 _scheduleDraftSave();

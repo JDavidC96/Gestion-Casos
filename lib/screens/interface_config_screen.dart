@@ -1,7 +1,9 @@
 // lib/screens/interface_config_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
 import '../data/risk_data.dart';
+import '../providers/interface_config_provider.dart';
 
 class InterfaceConfigScreen extends StatefulWidget {
   const InterfaceConfigScreen({super.key});
@@ -14,14 +16,9 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   
   // Configuraciones disponibles
-  bool _mostrarCasosCerrados = true;
-  bool _mostrarEstadisticas = true;
   bool _habilitarFotos = true;
   bool _habilitarFirmas = true;
   bool _mostrarNivelRiesgo = true;
-  bool _mostrarUbicacion = true;
-  String _temaSeleccionado = 'default';
-  String _colorPrimario = 'blue';
   bool _isLoading = false;
 
   // Nuevas configuraciones de nivel de peligro
@@ -33,6 +30,8 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
   Map<String, bool> _subtiposHabilitados = {};
   Map<String, bool> _categoriasHabilitadas = {};
   bool _todosLosSubtipos = true;
+  // Subtipos personalizados agregados por el admin (por categoria)
+  Map<String, List<String>> _subtiposPersonalizados = {};
 
   late String _groupId;
   late Map<String, dynamic> _groupData;
@@ -71,11 +70,23 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
     try {
       _groupId = args['groupId'] as String;
       _groupData = args['groupData'] as Map<String, dynamic>;
-      _currentConfig = _groupData['configInterfaz'] ?? {};
-      _loadCurrentConfig();
-      _isInitialized = true;
+      // No leer configInterfaz de los args — pueden estar desactualizados.
+      // Cargar siempre desde Firestore para reflejar la config guardada.
+      _loadConfigFromFirestore();
     } catch (e) {
       _handleError('Error al cargar los datos: $e');
+    }
+  }
+
+  Future<void> _loadConfigFromFirestore() async {
+    try {
+      final doc = await _firestore.collection('grupos').doc(_groupId).get();
+      if (!mounted) return;
+      _currentConfig = (doc.data()?['configInterfaz'] as Map<String, dynamic>?) ?? {};
+      _loadCurrentConfig();
+      setState(() => _isInitialized = true);
+    } catch (e) {
+      _handleError('Error cargando configuración: $e');
     }
   }
 
@@ -94,14 +105,9 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
   void _loadCurrentConfig() {
     // Cargar configuraciones existentes
     setState(() {
-      _mostrarCasosCerrados = _currentConfig['mostrarCasosCerrados'] ?? true;
-      _mostrarEstadisticas = _currentConfig['mostrarEstadisticas'] ?? true;
       _habilitarFotos = _currentConfig['habilitarFotos'] ?? true;
       _habilitarFirmas = _currentConfig['habilitarFirmas'] ?? true;
       _mostrarNivelRiesgo = _currentConfig['mostrarNivelRiesgo'] ?? true;
-      _mostrarUbicacion = _currentConfig['mostrarUbicacion'] ?? true;
-      _temaSeleccionado = _currentConfig['tema'] ?? 'default';
-      _colorPrimario = _currentConfig['colorPrimario'] ?? 'blue';
 
       // Nuevas configuraciones de nivel de peligro
       _mostrarNivelPeligroEnDialog = _currentConfig['mostrarNivelPeligroEnDialog'] ?? false;
@@ -128,14 +134,33 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
     }
 
     // Cargar configuración guardada si existe
+    // Los valores de Firestore llegan como dynamic, hay que castear explícitamente
     final subtiposConfig = _currentConfig['subtiposHabilitados'] as Map<String, dynamic>?;
     final categoriasConfig = _currentConfig['categoriasHabilitadas'] as Map<String, dynamic>?;
     
     if (subtiposConfig != null) {
-      _subtiposHabilitados = Map<String, bool>.from(subtiposConfig);
+      subtiposConfig.forEach((key, value) {
+        _subtiposHabilitados[key] = value == true;
+      });
     }
     if (categoriasConfig != null) {
-      _categoriasHabilitadas = Map<String, bool>.from(categoriasConfig);
+      categoriasConfig.forEach((key, value) {
+        _categoriasHabilitadas[key] = value == true;
+      });
+    }
+
+    // Cargar subtipos personalizados
+    final personalizadosConfig = _currentConfig['subtiposPersonalizados'] as Map<String, dynamic>?;
+    if (personalizadosConfig != null) {
+      personalizadosConfig.forEach((categoria, lista) {
+        if (lista is List) {
+          _subtiposPersonalizados[categoria] = List<String>.from(lista);
+          // Asegurarse de que cada subtipo personalizado tenga un valor en el mapa
+          for (var subtipo in _subtiposPersonalizados[categoria]!) {
+            _subtiposHabilitados.putIfAbsent(subtipo, () => true);
+          }
+        }
+      });
     }
   }
 
@@ -144,14 +169,9 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
 
     try {
       final configData = {
-        'mostrarCasosCerrados': _mostrarCasosCerrados,
-        'mostrarEstadisticas': _mostrarEstadisticas,
         'habilitarFotos': _habilitarFotos,
         'habilitarFirmas': _habilitarFirmas,
         'mostrarNivelRiesgo': _mostrarNivelRiesgo,
-        'mostrarUbicacion': _mostrarUbicacion,
-        'tema': _temaSeleccionado,
-        'colorPrimario': _colorPrimario,
 
         // Nuevas configuraciones de nivel de peligro
         'mostrarNivelPeligroEnDialog': _mostrarNivelPeligroEnDialog,
@@ -161,6 +181,7 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
         'todosLosSubtipos': _todosLosSubtipos,
         'subtiposHabilitados': _subtiposHabilitados,
         'categoriasHabilitadas': _categoriasHabilitadas,
+        'subtiposPersonalizados': _subtiposPersonalizados,
         'ultimaActualizacion': FieldValue.serverTimestamp(),
       };
 
@@ -169,6 +190,9 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
       });
 
       if (mounted) {
+        // Refrescar el provider para que los cambios se reflejen inmediatamente
+        final configProvider = Provider.of<InterfaceConfigProvider>(context, listen: false);
+        await configProvider.reloadConfig(_groupId);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Configuración guardada exitosamente'),
@@ -195,14 +219,9 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
 
   void _restablecerConfiguracion() {
     setState(() {
-      _mostrarCasosCerrados = true;
-      _mostrarEstadisticas = true;
       _habilitarFotos = true;
       _habilitarFirmas = true;
       _mostrarNivelRiesgo = true;
-      _mostrarUbicacion = true;
-      _temaSeleccionado = 'default';
-      _colorPrimario = 'blue';
 
       // Nuevas configuraciones - valores por defecto
       _mostrarNivelPeligroEnDialog = false;
@@ -210,6 +229,7 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
       _nivelPeligroDefault = 'Medio';
 
       _todosLosSubtipos = true;
+      _subtiposPersonalizados = {};
       _inicializarSubtipos();
     });
   }
@@ -234,14 +254,75 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
     setState(() {
       _categoriasHabilitadas[categoria] = seleccionar;
       _todosLosSubtipos = false;
-      
-      // Habilitar/deshabilitar todos los subtipos de la categoría
+
+      // Habilitar/deshabilitar subtipos base
       final categoriaData = RiskData.getCategoriaPorNombre(categoria);
       if (categoriaData != null) {
-        final subgrupos = categoriaData['subgrupos'] as List<String>;
-        for (var subtipo in subgrupos) {
+        for (var subtipo in categoriaData['subgrupos'] as List<String>) {
           _subtiposHabilitados[subtipo] = seleccionar;
         }
+      }
+      // Habilitar/deshabilitar subtipos personalizados de esta categoria
+      for (var subtipo in (_subtiposPersonalizados[categoria] ?? [])) {
+        _subtiposHabilitados[subtipo] = seleccionar;
+      }
+    });
+  }
+
+  void _agregarSubtipoPersonalizado(String categoria) {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: const Row(
+          children: [
+            Icon(Icons.add_circle_outline, color: Colors.blue),
+            SizedBox(width: 8),
+            Text('Agregar subtipo'),
+          ],
+        ),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Nombre del subtipo',
+            border: OutlineInputBorder(),
+            hintText: 'Ej: Ruido de impacto',
+          ),
+          textCapitalization: TextCapitalization.sentences,
+          onSubmitted: (_) => Navigator.pop(context, true),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+            child: const Text('Agregar', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    ).then((confirmar) {
+      if (confirmar == true) {
+        final nombre = ctrl.text.trim();
+        if (nombre.isEmpty) return;
+        // Evitar duplicados
+        final yaExiste = (_subtiposPersonalizados[categoria] ?? []).contains(nombre) ||
+            (RiskData.getCategoriaPorNombre(categoria)?['subgrupos'] as List<String>?)
+                ?.contains(nombre) == true;
+        if (yaExiste) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Ese subtipo ya existe')),
+          );
+          return;
+        }
+        setState(() {
+          _subtiposPersonalizados.putIfAbsent(categoria, () => []).add(nombre);
+          _subtiposHabilitados[nombre] = true;
+        });
       }
     });
   }
@@ -259,32 +340,20 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
   void _actualizarEstadoCategorias() {
     for (var categoria in matrizPeligros) {
       final categoriaNombre = categoria['categoria'] as String;
-      final subgrupos = categoria['subgrupos'] as List<String>;
-      
-      bool todosHabilitados = true;
-      for (var subtipo in subgrupos) {
-        if (_subtiposHabilitados[subtipo] != true) {
-          todosHabilitados = false;
-          break;
-        }
-      }
-      _categoriasHabilitadas[categoriaNombre] = todosHabilitados;
-    }
-    
-    // Verificar si todos los subtipos están seleccionados
-    _todosLosSubtipos = _subtiposHabilitados.values.every((value) => value == true);
-  }
+      final subgruposBase = categoria['subgrupos'] as List<String>;
+      final subgruposPersonalizados = _subtiposPersonalizados[categoriaNombre] ?? [];
+      final todosSubgrupos = [...subgruposBase, ...subgruposPersonalizados];
 
-  Color _getColorFromString(String colorName) {
-    switch (colorName) {
-      case 'blue': return Colors.blue;
-      case 'green': return Colors.green;
-      case 'orange': return Colors.orange;
-      case 'purple': return Colors.purple;
-      case 'red': return Colors.red;
-      case 'teal': return Colors.teal;
-      default: return Colors.blue;
+      // La categoria permanece habilitada (expandida) si al menos UN subtipo esta activo.
+      final algunoHabilitado = todosSubgrupos.any((s) => _subtiposHabilitados[s] == true);
+      if (algunoHabilitado) {
+        _categoriasHabilitadas[categoriaNombre] = true;
+      }
+      // Si ninguno esta habilitado la dejamos en false (desactivada por el usuario).
     }
+
+    // Verificar si todos los subtipos estan seleccionados
+    _todosLosSubtipos = _subtiposHabilitados.values.every((value) => value == true);
   }
 
   @override
@@ -304,7 +373,7 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Configurar Interfaz'),
-        backgroundColor: _getColorFromString(_colorPrimario),
+        backgroundColor: Colors.blue,
         actions: [
           IconButton(
             icon: const Icon(Icons.save),
@@ -400,48 +469,8 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
                   ),
                   const SizedBox(height: 24),
 
-                  // Sección: Apariencia
-                  _buildSectionTitle('Apariencia General'),
-                  _buildSwitchOption(
-                    'Tema Oscuro',
-                    _temaSeleccionado == 'dark',
-                    (value) {
-                      setState(() {
-                        _temaSeleccionado = value ? 'dark' : 'default';
-                      });
-                    },
-                    icon: Icons.dark_mode,
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  _buildSubtitle('Color Principal'),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      _buildColorOption('Azul', 'blue', Colors.blue),
-                      _buildColorOption('Verde', 'green', Colors.green),
-                      _buildColorOption('Naranja', 'orange', Colors.orange),
-                      _buildColorOption('Morado', 'purple', Colors.purple),
-                      _buildColorOption('Rojo', 'red', Colors.red),
-                      _buildColorOption('Verde Azulado', 'teal', Colors.teal),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-
                   // Sección: Funcionalidades
                   _buildSectionTitle('Funcionalidades'),
-                  _buildSwitchOption(
-                    'Mostrar Casos Cerrados',
-                    _mostrarCasosCerrados,
-                    (value) => setState(() => _mostrarCasosCerrados = value),
-                    icon: Icons.archive,
-                  ),
-                  _buildSwitchOption(
-                    'Mostrar Estadísticas',
-                    _mostrarEstadisticas,
-                    (value) => setState(() => _mostrarEstadisticas = value),
-                    icon: Icons.analytics,
-                  ),
                   _buildSwitchOption(
                     'Habilitar Fotos',
                     _habilitarFotos,
@@ -459,12 +488,6 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
                     _mostrarNivelRiesgo,
                     (value) => setState(() => _mostrarNivelRiesgo = value),
                     icon: Icons.warning,
-                  ),
-                  _buildSwitchOption(
-                    'Mostrar Ubicación',
-                    _mostrarUbicacion,
-                    (value) => setState(() => _mostrarUbicacion = value),
-                    icon: Icons.location_on,
                   ),
                   const SizedBox(height: 32),
 
@@ -488,7 +511,7 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
                           icon: const Icon(Icons.save),
                           label: const Text('Guardar'),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: _getColorFromString(_colorPrimario),
+                            backgroundColor: Colors.blue,
                             padding: const EdgeInsets.symmetric(vertical: 12),
                           ),
                         ),
@@ -560,7 +583,8 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
 
   Widget _buildCategoriaItem(String categoriaNombre, IconData icon, Color color, List<String> subgrupos) {
     final categoriaHabilitada = _categoriasHabilitadas[categoriaNombre] ?? false;
-    
+    final personalizados = _subtiposPersonalizados[categoriaNombre] ?? [];
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
@@ -569,7 +593,7 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
       ),
       child: Column(
         children: [
-          // Header de la categoría
+          // Header de la categoria
           ListTile(
             leading: Icon(icon, color: color),
             title: Text(
@@ -586,13 +610,13 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
             ),
             onTap: () => _seleccionarCategoria(categoriaNombre, !categoriaHabilitada),
           ),
-          
-          // Subtipos de la categoría
+
+          // Subtipos (solo visibles si la categoria esta habilitada)
           if (categoriaHabilitada) ...[
             const Divider(height: 1),
+            // Subtipos base
             ...subgrupos.map((subtipo) {
               final subtipoHabilitado = _subtiposHabilitados[subtipo] ?? false;
-              
               return CheckboxListTile(
                 title: Text(
                   subtipo,
@@ -608,6 +632,58 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
                 contentPadding: const EdgeInsets.only(left: 56, right: 16),
               );
             }).toList(),
+            // Subtipos personalizados
+            ...personalizados.map((subtipo) {
+              final subtipoHabilitado = _subtiposHabilitados[subtipo] ?? true;
+              return CheckboxListTile(
+                title: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        subtipo,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: subtipoHabilitado ? Colors.black87 : Colors.grey,
+                        ),
+                      ),
+                    ),
+                    // Icono que indica que es personalizado
+                    const Icon(Icons.edit_note, size: 14, color: Colors.blue),
+                  ],
+                ),
+                value: subtipoHabilitado,
+                onChanged: (value) => _seleccionarSubtipo(subtipo, value ?? false),
+                controlAffinity: ListTileControlAffinity.leading,
+                dense: true,
+                contentPadding: const EdgeInsets.only(left: 56, right: 8),
+              );
+            }).toList(),
+            // Boton agregar subtipo
+            InkWell(
+              onTap: () => _agregarSubtipoPersonalizado(categoriaNombre),
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(8),
+                bottomRight: Radius.circular(8),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.add_circle_outline, size: 16, color: color),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Agregar subtipo',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: color,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ],
       ),
@@ -665,47 +741,7 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
         trailing: Switch(
           value: value,
           onChanged: onChanged,
-          activeColor: _getColorFromString(_colorPrimario),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildColorOption(String label, String colorValue, Color color) {
-    final isSelected = _colorPrimario == colorValue;
-    
-    return GestureDetector(
-      onTap: () => setState(() => _colorPrimario = colorValue),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? color.withOpacity(0.2) : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? color : Colors.grey[300]!,
-            width: isSelected ? 2 : 1,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 16,
-              height: 16,
-              decoration: BoxDecoration(
-                color: color,
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? color : Colors.grey[700],
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-          ],
+          activeColor: Colors.blue,
         ),
       ),
     );

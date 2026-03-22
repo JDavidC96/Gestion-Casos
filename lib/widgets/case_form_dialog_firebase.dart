@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import '../models/empresa_model.dart';
 import '../services/firebase_service.dart';
 import '../data/risk_data.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/interface_config_provider.dart';
 
 class CaseFormDialogFirebase extends StatefulWidget {
   final Empresa empresa;
@@ -33,50 +33,61 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
   final _formKey = GlobalKey<FormState>();
   final _nombreController = TextEditingController();
 
-  String _selectedCategoria = 'Físico';
+  String _selectedCategoria = '';
   String? _selectedSubgrupo;
   String _selectednivelPeligro = 'Medio';
   bool _isLoading = false;
-
-  // Configuración de la interfaz - ELIMINAR el mapa completo
-  bool _mostrarNivelPeligroEnDialog = false;
-
-  List<String> get _categorias => RiskData.getCategorias();
-  
-  List<String> get _subgrupos => RiskData.getSubgruposPorCategoria(_selectedCategoria);
+  bool _configLoaded = false;
 
   @override
   void initState() {
     super.initState();
-    _cargarConfiguracion();
-    if (_subgrupos.isNotEmpty) {
-      _selectedSubgrupo = _subgrupos[0];
+    // _selectedCategoria y subgrupo se inicializan en didChangeDependencies
+    // una vez que el provider esté disponible
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_configLoaded) {
+      _configLoaded = true;
+      final config = Provider.of<InterfaceConfigProvider>(context, listen: false).currentConfig;
+      final defaultNivel = config['nivelPeligroDefault'] as String? ?? 'Medio';
+      final cats = _getCategoriasDisponibles(config);
+      final primeraCat = cats.isNotEmpty ? cats[0] : 'Físico';
+      final subs = _getSubgruposDisponibles(config, primeraCat);
+      setState(() {
+        _selectednivelPeligro = defaultNivel;
+        _selectedCategoria = primeraCat;
+        _selectedSubgrupo = subs.isNotEmpty ? subs[0] : null;
+      });
     }
   }
 
-  Future<void> _cargarConfiguracion() async {
-    try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final grupoId = authProvider.grupoId;
-      
-      if (grupoId != null) {
-        final grupoDoc = await FirebaseFirestore.instance
-            .collection('grupos')
-            .doc(grupoId)
-            .get();
-            
-        if (grupoDoc.exists) {
-          final config = grupoDoc.data()?['configInterfaz'] ?? {};
-          setState(() {
-            // Usar directamente las propiedades sin guardar el mapa completo
-            _mostrarNivelPeligroEnDialog = config['mostrarNivelPeligroEnDialog'] ?? false;
-            _selectednivelPeligro = config['nivelPeligroDefault'] ?? 'Medio';
-          });
-        }
-      }
-    } catch (e) {
-      print('Error cargando configuración: $e');
-    }
+  // Devuelve las categorías habilitadas según la configuración del grupo
+  List<String> _getCategoriasDisponibles(Map<String, dynamic> config) {
+    final todosSubtipos = config['todosLosSubtipos'] as bool? ?? true;
+    final todas = RiskData.getCategorias();
+    if (todosSubtipos) return todas;
+    final habilitadas = config['categoriasHabilitadas'] as Map<String, dynamic>? ?? {};
+    final filtradas = todas.where((c) => habilitadas[c] == true).toList();
+    return filtradas.isNotEmpty ? filtradas : todas;
+  }
+
+  // Devuelve los subtipos habilitados + personalizados para una categoría
+  List<String> _getSubgruposDisponibles(Map<String, dynamic> config, String categoria) {
+    final todosSubtipos = config['todosLosSubtipos'] as bool? ?? true;
+    final base = RiskData.getSubgruposPorCategoria(categoria);
+    if (todosSubtipos) return base;
+    final habilitados = config['subtiposHabilitados'] as Map<String, dynamic>? ?? {};
+    final personalizadosRaw = config['subtiposPersonalizados'] as Map<String, dynamic>? ?? {};
+    final personalizados = (personalizadosRaw[categoria] as List<dynamic>? ?? [])
+        .cast<String>()
+        .where((s) => habilitados[s] != false)
+        .toList();
+    final filtrados = base.where((s) => habilitados[s] == true).toList();
+    final result = [...filtrados, ...personalizados];
+    return result.isNotEmpty ? result : base;
   }
 
   @override
@@ -128,7 +139,8 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
       };
 
       // Solo agregar nivel de peligro si está habilitado en la configuración
-      if (_mostrarNivelPeligroEnDialog) {
+      final configProvider = Provider.of<InterfaceConfigProvider>(context, listen: false);
+      if (configProvider.isFeatureEnabled('mostrarNivelPeligroEnDialog')) {
         casoData['nivelPeligro'] = _selectednivelPeligro;
       }
 
@@ -177,15 +189,15 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
     }
   }
 
-  Widget _buildCategoriaSelector() {
+  Widget _buildCategoriaSelector(List<String> categorias) {
     return DropdownButtonFormField<String>(
-      value: _selectedCategoria,
+      value: categorias.contains(_selectedCategoria) ? _selectedCategoria : (categorias.isNotEmpty ? categorias[0] : null),
       isExpanded: true,
       decoration: const InputDecoration(
         labelText: "Categoría de Peligro",
         border: OutlineInputBorder(),
       ),
-      items: _categorias
+      items: categorias
           .map((categoria) => DropdownMenuItem(
                 value: categoria,
                 child: Row(
@@ -209,9 +221,11 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
           .toList(),
       onChanged: (value) {
         if (value != null) {
+          final config = Provider.of<InterfaceConfigProvider>(context, listen: false).currentConfig;
+          final subs = _getSubgruposDisponibles(config, value);
           setState(() {
             _selectedCategoria = value;
-            _selectedSubgrupo = _subgrupos.isNotEmpty ? _subgrupos[0] : null;
+            _selectedSubgrupo = subs.isNotEmpty ? subs[0] : null;
           });
         }
       },
@@ -224,15 +238,15 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
     );
   }
 
-  Widget _buildSubgrupoSelector() {
+  Widget _buildSubgrupoSelector(List<String> subgrupos) {
     return DropdownButtonFormField<String>(
-      value: _selectedSubgrupo,
+      value: subgrupos.contains(_selectedSubgrupo) ? _selectedSubgrupo : (subgrupos.isNotEmpty ? subgrupos[0] : null),
       decoration: const InputDecoration(
         labelText: "Tipo Específico",
         border: OutlineInputBorder(),
       ),
       isExpanded: true,
-      items: _subgrupos
+      items: subgrupos
           .map((subgrupo) => DropdownMenuItem(
                 value: subgrupo,
                 child: Text(
@@ -258,8 +272,8 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
     );
   }
 
-  Widget _buildNivelPeligroSelector() {
-    if (!_mostrarNivelPeligroEnDialog) {
+  Widget _buildNivelPeligroSelector(bool mostrar) {
+    if (!mostrar) {
       return const SizedBox.shrink();
     }
 
@@ -300,6 +314,12 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
 
   @override
   Widget build(BuildContext context) {
+    final configProvider = Provider.of<InterfaceConfigProvider>(context);
+    final config = configProvider.currentConfig;
+    final categoriasDisponibles = _getCategoriasDisponibles(config);
+    final subgruposDisponibles = _getSubgruposDisponibles(config, _selectedCategoria.isNotEmpty ? _selectedCategoria : (categoriasDisponibles.isNotEmpty ? categoriasDisponibles[0] : 'Físico'));
+    final mostrarNivelPeligro = config['mostrarNivelPeligroEnDialog'] as bool? ?? false;
+
     return Dialog(
       insetPadding: const EdgeInsets.all(20),
       child: ConstrainedBox(
@@ -407,15 +427,15 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
                         ),
                         const SizedBox(height: 16),
                         
-                        _buildCategoriaSelector(),
+                        _buildCategoriaSelector(categoriasDisponibles),
                         const SizedBox(height: 16),
                         
-                        _buildSubgrupoSelector(),
+                        _buildSubgrupoSelector(subgruposDisponibles),
                         const SizedBox(height: 16),
                         
                         // Nivel de peligro condicional
-                        _buildNivelPeligroSelector(),
-                        if (_mostrarNivelPeligroEnDialog) const SizedBox(height: 16),
+                        _buildNivelPeligroSelector(mostrarNivelPeligro),
+                        if (mostrarNivelPeligro) const SizedBox(height: 16),
                       ],
                     ),
                   ),

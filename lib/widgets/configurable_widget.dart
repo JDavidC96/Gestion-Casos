@@ -1,8 +1,7 @@
 // lib/widgets/configurable_widget.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/auth_provider.dart';
-import '../services/user_service.dart';
+import '../providers/interface_config_provider.dart';
 
 class ConfigurableWidget extends StatelessWidget {
   final String feature;
@@ -18,20 +17,14 @@ class ConfigurableWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
-    
-    return FutureBuilder<Map<String, dynamic>?>(
-      future: UserService.getConfigInterfaz(authProvider.grupoId ?? ''),
-      builder: (context, snapshot) {
-        final config = snapshot.data;
-        final isEnabled = config?[feature] ?? true;
-        
-        if (isEnabled) {
-          return child;
-        } else {
-          return alternativeChild ?? const SizedBox.shrink();
-        }
-      },
-    );
+    final configProvider = Provider.of<InterfaceConfigProvider>(context);
+
+    final isEnabled = configProvider.currentConfig[feature] ?? true;
+
+    if (isEnabled) {
+      return child;
+    } else {
+      return alternativeChild ?? const SizedBox.shrink();
+    }
   }
 }

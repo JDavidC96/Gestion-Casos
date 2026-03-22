@@ -87,39 +87,14 @@ class _AdminScreenContentState extends State<_AdminScreenContent> {
         ),
       ),
       actions: [
-        if (widget.authProvider.isAdmin) // Solo mostrar para admins
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: _configurarInterfaz,
-            tooltip: 'Configurar Interfaz',
-          ),
         Padding(
-          padding: const EdgeInsets.only(right: 8.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                widget.authProvider.userData!['displayName'] ?? '',
-                style: const TextStyle(fontSize: 14),
-              ),
-              if (widget.authProvider.grupoNombre != null)
-                Text(
-                  widget.authProvider.grupoNombre!,
-                  style: const TextStyle(fontSize: 12, color: Colors.white70),
-                ),
-              Text(
-                _getRoleDisplayName(),
-                style: const TextStyle(fontSize: 10, color: Colors.white70),
-              ),
-            ],
+          padding: const EdgeInsets.only(right: 16.0),
+          child: Center(
+            child: Text(
+              widget.authProvider.userData!['displayName'] ?? '',
+              style: const TextStyle(fontSize: 14),
+            ),
           ),
-        ),
-        IconButton(
-          icon: const Icon(Icons.home),
-          onPressed: () {
-            Navigator.pushReplacementNamed(context, '/home');
-          },
-          tooltip: 'Ir al Inicio',
         ),
       ],
     );
@@ -133,12 +108,6 @@ class _AdminScreenContentState extends State<_AdminScreenContent> {
     } else {
       return const Text("Panel de Inspector");
     }
-  }
-
-  String _getRoleDisplayName() {
-    if (widget.authProvider.isAdmin) return 'Admin';
-    if (widget.authProvider.isSuperInspector) return 'Super Inspector';
-    return 'Inspector';
   }
 
   Widget _buildBody(AdminController adminController) {
@@ -241,22 +210,24 @@ class _AdminScreenContentState extends State<_AdminScreenContent> {
       children: [
         // Botón para configurar interfaz
         FloatingActionButton(
+          heroTag: 'fab_admin_config',
           onPressed: _configurarInterfaz,
           backgroundColor: Colors.green,
           foregroundColor: Colors.white,
           mini: true,
-          child: const Icon(Icons.settings),
           tooltip: 'Configurar Interfaz',
+          child: const Icon(Icons.settings),
         ),
         const SizedBox(height: 16),
         // Botón para cambiar logo
         FloatingActionButton(
+          heroTag: 'fab_admin_logo',
           onPressed: () => _cambiarLogo(context),
           backgroundColor: Colors.purple,
           foregroundColor: Colors.white,
           mini: true,
-          child: const Icon(Icons.image),
           tooltip: 'Cambiar Logo',
+          child: const Icon(Icons.image),
         ),
 
       ],
@@ -401,16 +372,6 @@ class _AdminScreenContentState extends State<_AdminScreenContent> {
       const SnackBar(
         content: Text('No tienes permisos para realizar esta acción'),
         backgroundColor: Colors.red,
-      ),
-    );
-  }
-
-  void _mostrarSnackBar(String mensaje, Color color) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(mensaje),
-        backgroundColor: color,
-        duration: const Duration(seconds: 3),
       ),
     );
   }
