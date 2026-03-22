@@ -42,8 +42,7 @@ class InterfaceConfigService {
 
       // Combinar con configuración por defecto para asegurar que todos los campos existan
       return {..._defaultConfig, ...configData};
-    } catch (e) {
-      print('Error obteniendo configuración de interfaz: $e');
+    } catch (_) {
       return _defaultConfig;
     }
   }
@@ -59,7 +58,6 @@ class InterfaceConfigService {
         'ultimaActualizacion': FieldValue.serverTimestamp(),
       });
     } catch (e) {
-      print('Error guardando configuración de interfaz: $e');
       rethrow;
     }
   }
@@ -83,8 +81,7 @@ class InterfaceConfigService {
 
           return {..._defaultConfig, ...configData};
         })
-        .handleError((error) {
-          print('Error en stream de configuración: $error');
+        .handleError((_) {
           return _defaultConfig;
         });
   }
@@ -232,7 +229,6 @@ class InterfaceConfigService {
         'createdAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     } catch (e) {
-      print('Error inicializando configuración del grupo: $e');
       rethrow;
     }
   }
@@ -242,7 +238,6 @@ class InterfaceConfigService {
     try {
       await _firestore.collection('grupos').doc(grupoId).delete();
     } catch (e) {
-      print('Error eliminando configuración del grupo: $e');
       rethrow;
     }
   }

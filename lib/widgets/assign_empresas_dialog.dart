@@ -54,7 +54,14 @@ class _AssignEmpresasDialogState extends State<AssignEmpresasDialog> {
         _isLoading = false;
       });
     } catch (e) {
-      print('Error cargando empresas: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al cargar empresas: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
       setState(() => _isLoading = false);
     }
   }

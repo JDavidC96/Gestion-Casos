@@ -54,7 +54,9 @@ class _CaseListScreenState extends State<CaseListScreen> {
     if (!_isInitialized) {
       _isInitialized = true;
       _initializeEmpresaFromArguments();
-      _loadInterfaceConfig();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _loadInterfaceConfig();
+      });
     }
   }
 
@@ -527,7 +529,6 @@ void _mostrarDialogoReporteDiario() {
       }
       return supervisores.toList()..sort();
     } catch (e) {
-      print('Error obteniendo supervisores: $e');
       return [];
     }
   }

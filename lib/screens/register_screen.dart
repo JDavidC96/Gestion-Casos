@@ -119,7 +119,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
         });
       }
     } catch (e) {
-      print('❌ Error buscando grupo: $e');
       if (mounted) {
         setState(() {
           _grupoEncontradoNombre = null;
@@ -133,7 +132,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   // Método para registrar usuario en Firebase
   Future<void> _registrarUsuario({String? firmaUrl}) async {
-    try {
+    
       if (_isGoogleRegistration) {
         // Registro con Google — firmaUrl ya se subió antes de llamar aquí
         final authProvider = Provider.of<my_auth.AuthProvider>(context, listen: false);
@@ -172,14 +171,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
           'createdAt': FieldValue.serverTimestamp(),
           'uid': user.uid,
         });
-
-        print('Usuario registrado exitosamente: ${user.uid}');
       }
       
-    } catch (e) {
-      print('Error registrando usuario: $e');
-      throw e;
-    }
+    
   }
 
   Future<User> _crearUsuarioEnFirebase(String email, String password) async {
@@ -238,7 +232,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
           }
         }
       }
-      print('Error creando usuario en Firebase Auth: $e');
       rethrow;
     }
   }
@@ -281,12 +274,33 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (_firmaBytes != null) {
         try {
           final cedulaId = _cedulaController.text.trim();
-          firmaUrl = await CameraService.subirFirmaADrive(
+          final firmaResult = await CameraService.subirFirmaADrive(
             firmaBytes: _firmaBytes!,
             nombre: 'firma_registro_$cedulaId',
           );
+          if (firmaResult.exitoso) {
+            firmaUrl = firmaResult.url;
+          } else {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('${firmaResult.mensaje}. El registro continuará sin la firma.'),
+                  backgroundColor: Colors.orange,
+                  duration: const Duration(seconds: 5),
+                ),
+              );
+            }
+          }
         } catch (e) {
-          print('Advertencia: no se pudo subir firma a Drive: $e');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Error subiendo la firma: $e. El registro continuará sin la firma.'),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 5),
+              ),
+            );
+          }
         }
       }
 

@@ -1,25 +1,4 @@
 // lib/services/firebase_service.dart
-//
-// ═══════════════════════════════════════════════════════════════════
-//  NUEVA ESTRUCTURA JERÁRQUICA DE FIRESTORE
-// ───────────────────────────────────────────────────────────────────
-//  Colecciones raíz (globales):
-//    • grupos              → grupos/{grupoId}
-//    • solicitudes_grupos  → solicitudes_grupos/{solicitudId}
-//    • users               → users/{uid}   (sigue siendo global para auth)
-//
-//  Sub-colecciones por grupo:
-//    grupos/{grupoId}/
-//      empresas/{empresaId}/
-//        centros_trabajo/{centroId}/
-//          casos/{casoId}
-//
-//  Helpers de paths (para no repetir strings en toda la app):
-//    _empresasRef(grupoId)
-//    _centrosRef(grupoId, empresaId)
-//    _casosRef(grupoId, empresaId, centroId)
-//    _casoDoc(grupoId, empresaId, centroId, casoId)
-// ═══════════════════════════════════════════════════════════════════
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -66,7 +45,6 @@ class FirebaseService {
           email: email, password: password);
       return credential.user;
     } catch (e) {
-      print('Error en login: $e');
       rethrow;
     }
   }
@@ -81,7 +59,6 @@ class FirebaseService {
     try {
       await _auth.sendPasswordResetEmail(email: email);
     } catch (e) {
-      print('Error enviando email de recuperación: $e');
       rethrow;
     }
   }
@@ -126,7 +103,6 @@ class FirebaseService {
       }
       return null;
     } catch (e) {
-      print('Error en login con Google: $e');
       rethrow;
     }
   }
@@ -156,29 +132,26 @@ class FirebaseService {
         'lastLogin': FieldValue.serverTimestamp(),
       });
     } catch (e) {
-      print('Error completando registro con Google: $e');
       rethrow;
     }
   }
 
   static Future<void> signOutGoogle() async => await _googleSignIn.signOut();
 
+  /// ⚠️ SOLO PARA CONFIGURACIÓN INICIAL — no exponer en UI de producción.
+  /// En producción, la creación de super_admin debe hacerse desde
+  /// Firebase Console o Cloud Functions con permisos restringidos.
   static Future<User?> createSuperUser(
       String email, String password, String displayName) async {
-    try {
-      final credential = await _auth.createUserWithEmailAndPassword(
-          email: email, password: password);
-      await _db.collection('users').doc(credential.user!.uid).set({
-        'email': email,
-        'displayName': displayName,
-        'role': 'super_admin',
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-      return credential.user;
-    } catch (e) {
-      print('Error creando super usuario: $e');
-      rethrow;
-    }
+    final credential = await _auth.createUserWithEmailAndPassword(
+        email: email, password: password);
+    await _db.collection('users').doc(credential.user!.uid).set({
+      'email': email,
+      'displayName': displayName,
+      'role': 'super_admin',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    return credential.user;
   }
 
   static Future<bool> isSuperAdmin() async {
@@ -476,7 +449,6 @@ class FirebaseService {
       final uploadTask = await ref.putFile(foto);
       return await uploadTask.ref.getDownloadURL();
     } catch (e) {
-      print('Error subiendo foto: $e');
       rethrow;
     }
   }
@@ -493,7 +465,6 @@ class FirebaseService {
       );
       return await uploadTask.ref.getDownloadURL();
     } catch (e) {
-      print('Error subiendo firma: $e');
       rethrow;
     }
   }
@@ -501,8 +472,8 @@ class FirebaseService {
   static Future<void> deleteFotoOFirma(String url) async {
     try {
       await _storage.refFromURL(url).delete();
-    } catch (e) {
-      print('Error eliminando archivo: $e');
+    } catch (_) {
+      // Si no se puede eliminar el archivo remoto, no es crítico
     }
   }
 

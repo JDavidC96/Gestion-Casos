@@ -21,7 +21,6 @@ class AdminService {
              userRole == 'superinspector' ||
              (userRole == 'admin' && userGrupoId == targetGrupoId);
     } catch (e) {
-      print('❌ Error validando permisos: $e');
       return false;
     }
   }

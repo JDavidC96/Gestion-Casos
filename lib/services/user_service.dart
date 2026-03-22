@@ -55,7 +55,6 @@ class UserService {
 
       return newUser;
     } catch (e) {
-      print('Error creando usuario: $e');
       rethrow;
     }
   }
@@ -151,9 +150,7 @@ class UserService {
         'logoUrl': logoUrl,
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      print('✅ Logo actualizado para grupo: $grupoId');
     } catch (e) {
-      print('❌ Error actualizando logo del grupo: $e');
       rethrow;
     }
   }
@@ -168,9 +165,7 @@ class UserService {
         'logoUrl': FieldValue.delete(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      print('✅ Logo eliminado para grupo: $grupoId');
     } catch (e) {
-      print('❌ Error eliminando logo del grupo: $e');
       rethrow;
     }
   }
@@ -183,11 +178,8 @@ class UserService {
           .doc(grupoId)
           .get();
       
-      final logoUrl = doc.data()?['logoUrl'] as String?;
-      print('📊 Logo obtenido para grupo $grupoId: $logoUrl');
-      return logoUrl;
-    } catch (e) {
-      print('❌ Error obteniendo logo del grupo: $e');
+      return doc.data()?['logoUrl'] as String?;
+    } catch (_) {
       return null;
     }
   }
@@ -201,9 +193,7 @@ class UserService {
         'empresasAsignadas': empresaIds,
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      print('✅ Empresas asignadas al usuario: $userId - $empresaIds');
     } catch (e) {
-      print('❌ Error asignando empresas al usuario: $e');
       rethrow;
     }
   }
@@ -214,8 +204,7 @@ class UserService {
       final doc = await _firestore.collection('users').doc(userId).get();
       final empresas = doc.data()?['empresasAsignadas'] as List<dynamic>?;
       return empresas?.cast<String>() ?? [];
-    } catch (e) {
-      print('❌ Error obteniendo empresas asignadas: $e');
+    } catch (_) {
       return [];
     }
   }
@@ -230,8 +219,7 @@ class UserService {
           .get();
       
       return snapshot.docs.map((doc) => doc.id).toList();
-    } catch (e) {
-      print('❌ Error obteniendo inspectores por empresa: $e');
+    } catch (_) {
       return [];
     }
   }

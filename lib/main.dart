@@ -46,28 +46,41 @@ class GestionCasosApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => CentroTrabajoProvider()),
         ChangeNotifierProvider(create: (_) => InterfaceConfigProvider()),
       ],
-      child: MaterialApp(
-        title: 'Gestión de Casos',
-        theme: ThemeData(
-          primarySwatch: Colors.blue,
-          useMaterial3: true,
-        ),
-        initialRoute: '/loginSuccess',
-        routes: {
-          '/group_admin': (_) => const GroupAdminScreen(),
-          '/loginSuccess': (_) => const LoginSuccessAnimation(),
-          '/interface_config': (_) => const InterfaceConfigScreen(),
-          '/login': (_) => const LoginScreen(),
-          '/forgot_password': (_) => const ForgotPasswordScreen(),
-          '/superAdmin': (_) => const SuperAdminScreen(),
-          '/admin': (_) => const AdminScreen(),
+      child: Consumer<InterfaceConfigProvider>(
+        builder: (context, configProvider, _) {
+          final themeMode = configProvider.getThemeMode();
+          final primaryColor = configProvider.getPrimaryColor();
 
-          '/home': (_) => const HomeScreen(),
-          '/centros': (_) => const CentrosTrabajoScreen(),
-          '/cases': (_) => const CaseListScreen(),
-          '/closedCases': (context) => const ClosedCasesScreen(),
-          '/caseDetail': (_) => const CaseDetailScreen(),
-          '/report': (_) => const ReportScreen(),
+          return MaterialApp(
+            title: 'SafeGestion',
+            themeMode: themeMode,
+            theme: ThemeData(
+              colorSchemeSeed: primaryColor,
+              useMaterial3: true,
+              brightness: Brightness.light,
+            ),
+            darkTheme: ThemeData(
+              colorSchemeSeed: primaryColor,
+              useMaterial3: true,
+              brightness: Brightness.dark,
+            ),
+            initialRoute: '/loginSuccess',
+            routes: {
+              '/group_admin': (_) => const GroupAdminScreen(),
+              '/loginSuccess': (_) => const LoginSuccessAnimation(),
+              '/interface_config': (_) => const InterfaceConfigScreen(),
+              '/login': (_) => const LoginScreen(),
+              '/forgot_password': (_) => const ForgotPasswordScreen(),
+              '/superAdmin': (_) => const SuperAdminScreen(),
+              '/admin': (_) => const AdminScreen(),
+              '/home': (_) => const HomeScreen(),
+              '/centros': (_) => const CentrosTrabajoScreen(),
+              '/cases': (_) => const CaseListScreen(),
+              '/closedCases': (context) => const ClosedCasesScreen(),
+              '/caseDetail': (_) => const CaseDetailScreen(),
+              '/report': (_) => const ReportScreen(),
+            },
+          );
         },
       ),
     );

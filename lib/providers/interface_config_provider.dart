@@ -91,7 +91,7 @@ class InterfaceConfigProvider with ChangeNotifier {
       case 'light':
         return ThemeMode.light;
       default:
-        return ThemeMode.system;
+        return ThemeMode.light;
     }
   }
 

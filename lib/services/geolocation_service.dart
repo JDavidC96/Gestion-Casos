@@ -8,14 +8,12 @@ class GeolocationService {
       // Solicitar permisos
       final ubicacionStatus = await Permission.location.request();
       if (!ubicacionStatus.isGranted) {
-        print('Permisos de ubicación no concedidos');
         return null;
       }
 
       // Verificar si los servicios de ubicación están habilitados
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        print('Servicios de ubicación deshabilitados');
         return null;
       }
 
@@ -24,13 +22,11 @@ class GeolocationService {
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
-          print('Permisos de ubicación denegados');
           return null;
         }
       }
 
       if (permission == LocationPermission.deniedForever) {
-        print('Permisos de ubicación permanentemente denegados');
         return null;
       }
 
@@ -44,7 +40,6 @@ class GeolocationService {
         locationSettings: locationSettings,
       );
     } catch (e) {
-      print('Error obteniendo ubicación: $e');
       return null;
     }
   }

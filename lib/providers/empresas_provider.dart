@@ -19,7 +19,6 @@ class EmpresasProvider with ChangeNotifier {
       _empresasPorUsuario[userId] = empresas;
       _hasLoadedStates[userId] = true; // Marcar como cargado
     } catch (e) {
-      print('Error cargando empresas para usuario $userId: $e');
       _empresasPorUsuario[userId] = [];
       _hasLoadedStates[userId] = true; // Marcar como cargado incluso en error
     } finally {

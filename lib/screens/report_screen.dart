@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/firebase_service.dart';
 import '../models/case_model.dart';
 import '../services/pdf_service.dart';
+import '../theme/app_colors.dart';
 
 class ReportScreen extends StatefulWidget {
   final String? casoId;
@@ -45,7 +46,6 @@ class _ReportScreenState extends State<ReportScreen> {
     final String? centroId  = widget.centroId  ?? args?['centroId'];
 
     // Si tenemos el path completo, siempre recargar desde Firestore
-    // para garantizar que estadoAbierto.firmaClienteUrl esté presente
     if (id != null &&
         grupoId != null && grupoId.isNotEmpty &&
         empresaId != null && empresaId.isNotEmpty &&
@@ -54,61 +54,76 @@ class _ReportScreenState extends State<ReportScreen> {
         final doc = await FirebaseService.getCasoById(grupoId, empresaId, centroId, id);
         if (doc.exists) {
           final data = doc.data() as Map<String, dynamic>;
-          if (mounted) setState(() {
+          if (mounted) {
+            setState(() {
             _casoData = data;
             try {
               _casoObjeto = Case.fromMap(data);
-            } catch (e) {
-              print("Error al mapear Case: $e");
+            } catch (_) {
               _casoObjeto = null;
             }
           });
+          }
         }
-      } catch (e) {
-        print("Error cargando de Firebase: $e");
+      } catch (_) {
         // Fallback: usar casoData pasado por navegación si existe
         if (widget.casoData != null && mounted) {
           setState(() {
             _casoData = widget.casoData;
             try {
               _casoObjeto = Case.fromMap(widget.casoData!);
-            } catch (e) {
+            } catch (_) {
               _casoObjeto = null;
             }
           });
         }
       }
     } else if (widget.casoData != null) {
-      // Sin IDs completos, usar lo que llegó por navegación
-      if (mounted) setState(() {
+      if (mounted) {
+        setState(() {
         _casoData = widget.casoData;
         try {
           _casoObjeto = Case.fromMap(widget.casoData!);
-        } catch (e) {
-          print("Error al mapear Case: $e");
+        } catch (_) {
           _casoObjeto = null;
         }
       });
+      }
     }
 
     if (mounted) setState(() => _isLoading = false);
+  }
+
+  /// Muestra advertencias del PDF (fotos/firmas que no se pudieron cargar).
+  void _mostrarAdvertencias(List<String> advertencias) {
+    if (advertencias.isEmpty || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('PDF generado. Nota: ${advertencias.join(", ")}'),
+        backgroundColor: Colors.orange,
+        duration: const Duration(seconds: 5),
+      ),
+    );
   }
 
   Future<void> _handleGenerarReporte() async {
     if (_casoData == null) return;
     setState(() => _isGenerating = true);
     try {
-      await PdfService.generarReportePDF(_casoObjeto, _casoData!);
+      final advertencias = await PdfService.generarReportePDF(_casoObjeto, _casoData!);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ PDF generado con éxito'), backgroundColor: Colors.green),
-        );
+        if (advertencias.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('PDF generado con éxito'), backgroundColor: Colors.green),
+          );
+        } else {
+          _mostrarAdvertencias(advertencias);
+        }
       }
     } catch (e) {
-      print("Error PDF: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Error generando PDF: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -120,12 +135,14 @@ class _ReportScreenState extends State<ReportScreen> {
     if (_casoData == null) return;
     setState(() => _isSharing = true);
     try {
-      await PdfService.compartirReportePDF(_casoObjeto, _casoData!);
+      final advertencias = await PdfService.compartirReportePDF(_casoObjeto, _casoData!);
+      if (mounted) {
+        _mostrarAdvertencias(advertencias);
+      }
     } catch (e) {
-      print("Error compartiendo PDF: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('❌ Error al compartir: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Error al compartir: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -141,7 +158,7 @@ class _ReportScreenState extends State<ReportScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Exportar Reporte PDF"),
-        backgroundColor: const Color(0xFF4F81BD),
+        backgroundColor: AppColors.pdfAppBar,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -161,7 +178,7 @@ class _ReportScreenState extends State<ReportScreen> {
                           Icon(
                             isCerrado ? Icons.task_alt : Icons.warning_amber_rounded,
                             size: 60,
-                            color: isCerrado ? Colors.green : Colors.orange,
+                            color: isCerrado ? AppColors.success : AppColors.warning,
                           ),
                           const SizedBox(height: 10),
                           Text(
@@ -171,7 +188,7 @@ class _ReportScreenState extends State<ReportScreen> {
                           ),
                           const Divider(),
                           _rowInfo("Empresa:", _casoData?['empresaNombre'] ?? "N/A"),
-                          _rowInfo("Estado:", isCerrado ? "Cerrado ✓" : "Abierto"),
+                          _rowInfo("Estado:", isCerrado ? "Cerrado" : "Abierto"),
                         ],
                       ),
                     ),
@@ -193,7 +210,7 @@ class _ReportScreenState extends State<ReportScreen> {
                           : const Icon(Icons.picture_as_pdf),
                       label: Text(_isGenerating ? "GENERANDO..." : "VER / IMPRIMIR PDF"),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red.shade700,
+                        backgroundColor: AppColors.pdfButton,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
@@ -216,7 +233,7 @@ class _ReportScreenState extends State<ReportScreen> {
                           : const Icon(Icons.share),
                       label: Text(_isSharing ? "PREPARANDO..." : "COMPARTIR PDF"),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green.shade700,
+                        backgroundColor: AppColors.shareButton,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),

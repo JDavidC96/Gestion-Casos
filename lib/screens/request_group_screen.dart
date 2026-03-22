@@ -127,11 +127,11 @@ class _RequestGroupScreenState extends State<RequestGroupScreen> {
     if (image == null) return;
     setState(() => _subiendoLogo = true);
     try {
-      final url = await CameraService.subirFotoADrive(image);
-      if (url != null && mounted) {
-        setState(() => _logoUrl = url);
+      final result = await CameraService.subirFotoADrive(image);
+      if (result.exitoso && result.url != null && mounted) {
+        setState(() => _logoUrl = result.url);
       } else if (mounted) {
-        _showSnack('No se pudo subir el logo. Intenta de nuevo.', Colors.orange);
+        _showSnack(result.mensaje, Colors.orange);
       }
     } catch (e) {
       if (mounted) _showSnack('Error subiendo logo: $e', Colors.red);
@@ -174,10 +174,15 @@ class _RequestGroupScreenState extends State<RequestGroupScreen> {
       _firmaBytes = await _signatureController.toPngBytes();
       String? firmaUrl;
       if (_firmaBytes != null) {
-        firmaUrl = await CameraService.subirFirmaADrive(
+        final firmaResult = await CameraService.subirFirmaADrive(
           firmaBytes: _firmaBytes!,
           nombre: 'firma_admin_${_cedulaController.text.trim()}',
         );
+        if (firmaResult.exitoso) {
+          firmaUrl = firmaResult.url;
+        } else {
+          _showSnack(firmaResult.mensaje, Colors.orange);
+        }
       }
 
       // 2. Crear usuario admin en Firebase Auth

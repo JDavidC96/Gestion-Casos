@@ -19,9 +19,10 @@ class PdfService {
 
   /// Genera los bytes del PDF sin mostrarlo ni compartirlo.
   /// Usado internamente por [generarReportePDF] y [compartirReportePDF].
-  static Future<({Uint8List bytes, String nombre})> _buildPdfBytes(
+  static Future<({Uint8List bytes, String nombre, List<String> advertencias})> _buildPdfBytes(
       Case? caso, Map<String, dynamic> data) async {
     final pdf = pw.Document();
+    final advertencias = <String>[];
 
     final String nombreCaso     = _obtenerValor(caso?.nombre,          data['nombre'])          ?? 'Sin Nombre';
     final String categoria      = _obtenerValor(caso?.tipoRiesgo,      data['tipoRiesgo'])      ?? 'N/A';
@@ -53,7 +54,7 @@ class PdfService {
       try {
         final response = await http.get(Uri.parse(directUrl)).timeout(const Duration(seconds: 15));
         if (response.statusCode == 200) imageHallazgo = pw.MemoryImage(response.bodyBytes);
-      } catch (e) { print("Error cargando imagen: $e"); }
+      } catch (_) { advertencias.add('No se pudo cargar la foto del hallazgo'); }
     }
 
     // ── Cargar logo del grupo desde Firestore ────────────────────────────
@@ -73,8 +74,8 @@ class PdfService {
             imagenLogo = pw.MemoryImage(logoResp.bodyBytes);
           }
         }
-      } catch (e) {
-        print("Error cargando logo: $e");
+      } catch (_) {
+        advertencias.add('No se pudo cargar el logo de la empresa');
       }
     }
 
@@ -95,8 +96,8 @@ class PdfService {
             imagenFirmaInspector = pw.MemoryImage(firmaResp.bodyBytes);
           }
         }
-      } catch (e) {
-        print("Error cargando firma inspector: $e");
+      } catch (_) {
+        advertencias.add('No se pudo cargar la firma del inspector');
       }
     }
 
@@ -111,8 +112,8 @@ class PdfService {
         if (firmaClienteResp.statusCode == 200) {
           imagenFirmaCliente = pw.MemoryImage(firmaClienteResp.bodyBytes);
         }
-      } catch (e) {
-        print("Error cargando firma cliente: $e");
+      } catch (_) {
+        advertencias.add('No se pudo cargar la firma del cliente');
       }
     }
 
@@ -133,25 +134,29 @@ class PdfService {
     );
 
     final Uint8List bytes = await pdf.save();
-    return (bytes: bytes, nombre: "Reporte_$nombreCaso.pdf");
+    return (bytes: bytes, nombre: "Reporte_$nombreCaso.pdf", advertencias: advertencias);
   }
 
   /// Abre el visor de impresión/PDF nativo del dispositivo.
-  static Future<void> generarReportePDF(Case? caso, Map<String, dynamic> data) async {
+  /// Retorna lista de advertencias (fotos/firmas que no se pudieron cargar).
+  static Future<List<String>> generarReportePDF(Case? caso, Map<String, dynamic> data) async {
     final result = await _buildPdfBytes(caso, data);
     await Printing.layoutPdf(
       onLayout: (_) async => result.bytes,
       name: result.nombre,
     );
+    return result.advertencias;
   }
 
   /// Abre el menú nativo de compartir (WhatsApp, correo, Drive, etc.).
-  static Future<void> compartirReportePDF(Case? caso, Map<String, dynamic> data) async {
+  /// Retorna lista de advertencias (fotos/firmas que no se pudieron cargar).
+  static Future<List<String>> compartirReportePDF(Case? caso, Map<String, dynamic> data) async {
     final result = await _buildPdfBytes(caso, data);
     await Printing.sharePdf(
       bytes: result.bytes,
       filename: result.nombre,
     );
+    return result.advertencias;
   }
 
   static String? _obtenerValor(String? objetoVal, dynamic mapaVal) {

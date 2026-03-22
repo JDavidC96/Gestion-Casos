@@ -1,65 +1,70 @@
+// lib/services/logo_service.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:image_picker/image_picker.dart';
 import 'camera_service.dart';
+
+/// Resultado de operación con logo.
+class LogoResult {
+  final bool exitoso;
+  final String? url;
+  final String mensaje;
+
+  const LogoResult.ok({this.url, required this.mensaje})
+      : exitoso = true;
+
+  const LogoResult.error(this.mensaje)
+      : exitoso = false,
+        url = null;
+}
 
 class LogoService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   /// Subir logo del grupo.
   /// Abre el selector de galería, sube a Drive y guarda la URL en Firestore.
-  static Future<String?> uploadLogo(String grupoId) async {
+  /// Retorna [LogoResult] con el estado de la operación.
+  static Future<LogoResult> uploadLogo(String grupoId) async {
     try {
-      print('🔄 Subiendo logo para grupo: $grupoId');
-
       // PASO 1: Seleccionar imagen de galería
       final result = await CameraService.seleccionarFotoGaleria();
 
-      if (result == null || result['xFile'] == null) {
-        print('ℹ️ No se seleccionó ninguna imagen.');
-        return null;
+      if (result == null) {
+        return const LogoResult.error('No se seleccionó ninguna imagen');
       }
 
-      // PASO 2: Subir a Drive (igual que las fotos de casos)
-      final XFile xFile = result['xFile'] as XFile;
-      print('📤 Subiendo logo a Drive...');
-      final String? driveUrl = await CameraService.subirFotoADrive(xFile);
+      // PASO 2: Subir a Drive
+      final subida = await CameraService.subirFotoADrive(result.xFile);
 
-      if (driveUrl == null) {
-        print('❌ No se pudo subir el logo a Drive.');
-        return null;
+      if (!subida.exitoso || subida.url == null) {
+        return LogoResult.error(subida.mensaje);
       }
 
       // PASO 3: Guardar URL en Firestore
-      await _firestore
-          .collection('grupos')
-          .doc(grupoId)
-          .update({
-        'logoUrl': driveUrl,
+      await _firestore.collection('grupos').doc(grupoId).update({
+        'logoUrl': subida.url,
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      print('✅ Logo subido exitosamente: $driveUrl');
-      return driveUrl;
+      return LogoResult.ok(
+        url: subida.url,
+        mensaje: 'Logo actualizado correctamente',
+      );
     } catch (e) {
-      print('❌ Error subiendo logo: $e');
-      rethrow;
+      return LogoResult.error('Error subiendo logo: $e');
     }
   }
 
-  /// Eliminar logo del grupo
-  static Future<void> deleteLogo(String grupoId) async {
+  /// Eliminar logo del grupo.
+  /// Retorna [LogoResult] con el estado de la operación.
+  static Future<LogoResult> deleteLogo(String grupoId) async {
     try {
-      await _firestore
-          .collection('grupos')
-          .doc(grupoId)
-          .update({
+      await _firestore.collection('grupos').doc(grupoId).update({
         'logoUrl': FieldValue.delete(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      print('✅ Logo eliminado exitosamente');
+
+      return const LogoResult.ok(mensaje: 'Logo eliminado correctamente');
     } catch (e) {
-      print('❌ Error eliminando logo: $e');
-      rethrow;
+      return LogoResult.error('Error eliminando logo: $e');
     }
   }
 

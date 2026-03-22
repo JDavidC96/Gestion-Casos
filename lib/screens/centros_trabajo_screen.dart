@@ -102,7 +102,6 @@ class _CentrosTrabajoScreenState extends State<CentrosTrabajoScreen> {
         _isLoading = false;
       });
     } catch (e) {
-      print('Error cargando casos abiertos: $e');
       setState(() => _isLoading = false);
     }
   }
@@ -422,7 +421,6 @@ void _mostrarDialogoReporteMensual() {
       }
       return supervisores.toList()..sort();
     } catch (e) {
-      print('Error obteniendo supervisores: $e');
       return [];
     }
   }
