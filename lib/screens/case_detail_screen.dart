@@ -43,15 +43,15 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
     _ctrl.initFromArgs(args);
     _ctrl.setUsuario(authProvider.userData);
 
-    // Cargar config de interfaz
+    // Registrar listener antes de cargar para que la UI reaccione inmediatamente
+    _ctrl.addListener(_onControllerChanged);
+
+    // Cargar config de interfaz (no bloquea)
     if (authProvider.grupoId != null) {
       configProvider.loadConfig(authProvider.grupoId!);
     }
 
-    // Cargar firma del inspector desde su perfil
-    await _ctrl.loadFirmaInspectorFromProfile(authProvider.userData);
-
-    // Cargar datos del caso desde Firestore
+    // PRIORIDAD 1: Cargar datos del caso desde Firestore (lo que el usuario necesita ver)
     try {
       await _ctrl.loadFromFirestore();
     } catch (e) {
@@ -62,9 +62,10 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
       }
     }
 
-    // Sincronizar estado del controller con la UI
-    _ctrl.addListener(_onControllerChanged);
     if (mounted) setState(() {});
+
+    // PRIORIDAD 2: Cargar firmas en segundo plano (no bloquean la UI)
+    _ctrl.loadFirmaInspectorFromProfile(authProvider.userData);
   }
 
   void _onControllerChanged() {

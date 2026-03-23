@@ -84,9 +84,13 @@ class CaseDetailController with ChangeNotifier {
     casoCerrado = data['cerrado'] ?? false;
     _loadEstadoAbierto(data);
     _loadEstadoCerrado(data);
-    notifyListeners();
+    notifyListeners(); // ← UI se actualiza aquí con los datos del caso
+
+    // Restaurar borrador (rápido, es local con Hive)
     await _restoreDraftIfAny();
-    await cargarFirmasDesdeDrive();
+
+    // Firmas desde Drive — en segundo plano, no bloquean la UI
+    cargarFirmasDesdeDrive(); // sin await
   }
 
   void _loadEstadoAbierto(Map<String, dynamic> data) {
