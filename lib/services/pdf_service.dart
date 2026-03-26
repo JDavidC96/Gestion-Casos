@@ -8,18 +8,92 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/case_model.dart';
 
 class PdfService {
-  static String? _convertirUrlDrive(String? url) {
-    if (url == null) return null;
-    if (url.contains("drive.google.com")) {
-      final String? fileId = RegExp(r'\/d\/([a-zA-Z0-9-_]+)').firstMatch(url)?.group(1);
-      if (fileId != null) return "https://drive.google.com/uc?export=download&id=$fileId";
+  /// Extrae el fileId de cualquier variante de URL de Google Drive.
+  static String? _extraerFileIdDrive(String url) {
+    // /d/{id}/  ó  id={id}
+    return RegExp(r'(?:\/d\/|[?&]id=)([a-zA-Z0-9-_]+)')
+        .firstMatch(url)
+        ?.group(1);
+  }
+
+  /// Descarga una imagen de forma robusta:
+  ///  • Si es URL de Drive, intenta primero con el endpoint de thumbnail
+  ///    (confiable, sin página de confirmación) y cae a uc?export=download
+  ///    si el thumbnail no da una imagen válida.
+  ///  • Para cualquier URL, reintenta hasta [reintentos] veces con back-off.
+  ///  • Valida que la respuesta sea realmente una imagen (Content-Type image/*).
+  ///  • Detecta y maneja la página de confirmación de virus-scan de Drive.
+  static Future<Uint8List?> _descargarImagen(String? rawUrl,
+      {int reintentos = 3}) async {
+    if (rawUrl == null || rawUrl.isEmpty) return null;
+
+    // Construir lista de URLs a intentar en orden
+    final List<String> urls = [];
+    if (rawUrl.contains('drive.google.com') ||
+        rawUrl.contains('docs.google.com')) {
+      final String? fileId = _extraerFileIdDrive(rawUrl);
+      if (fileId != null) {
+        // Thumbnail: sin confirmación, alta disponibilidad, buena resolución
+        urls.add('https://drive.google.com/thumbnail?id=$fileId&sz=w1200');
+        // Descarga directa como fallback
+        urls.add('https://drive.google.com/uc?export=download&id=$fileId');
+      }
     }
-    return url;
+    // URL original siempre como último recurso
+    if (!urls.contains(rawUrl)) urls.add(rawUrl);
+
+    for (final url in urls) {
+      for (int intento = 0; intento < reintentos; intento++) {
+        try {
+          final response = await http
+              .get(Uri.parse(url))
+              .timeout(const Duration(seconds: 25));
+
+          if (response.statusCode != 200) continue;
+
+          final contentType = response.headers['content-type'] ?? '';
+
+          // ✅ Respuesta es una imagen — éxito
+          if (contentType.startsWith('image/')) {
+            return response.bodyBytes;
+          }
+
+          // ⚠️ Drive devolvió página HTML de confirmación de virus-scan
+          if (contentType.contains('text/html')) {
+            final body = response.body;
+            // Extraer el token 'confirm' del formulario de Drive
+            final confirmMatch =
+                RegExp(r'confirm=([^&"&\s]+)').firstMatch(body);
+            if (confirmMatch != null) {
+              final confirmUrl =
+                  'https://drive.google.com/uc?export=download'
+                  '&confirm=${confirmMatch.group(1)}'
+                  '&id=${_extraerFileIdDrive(url) ?? ''}';
+              final confirmResp = await http
+                  .get(Uri.parse(confirmUrl))
+                  .timeout(const Duration(seconds: 25));
+              if (confirmResp.statusCode == 200 &&
+                  (confirmResp.headers['content-type'] ?? '')
+                      .startsWith('image/')) {
+                return confirmResp.bodyBytes;
+              }
+            }
+          }
+        } catch (_) {
+          // Esperar antes de reintentar (back-off lineal)
+          if (intento < reintentos - 1) {
+            await Future.delayed(Duration(seconds: intento + 1));
+          }
+        }
+      }
+    }
+    return null; // todos los intentos fallaron
   }
 
   /// Genera los bytes del PDF sin mostrarlo ni compartirlo.
-  /// Usado internamente por [generarReportePDF] y [compartirReportePDF].
-  static Future<({Uint8List bytes, String nombre, List<String> advertencias})> _buildPdfBytes(
+  /// Usado internamente por [generarReportePDF] y [compartirReportePDF],
+  /// y también expuesto para que la UI pueda pre-construir el PDF con indicador de carga.
+  static Future<({Uint8List bytes, String nombre, List<String> advertencias})> buildPdfBytes(
       Case? caso, Map<String, dynamic> data) async {
     final pdf = pw.Document();
     final advertencias = <String>[];
@@ -47,75 +121,20 @@ class PdfService {
     final String fechaTexto = DateFormat('dd/MM/yyyy').format(fechaC);
     final String horaTexto  = DateFormat('HH:mm:ss').format(fechaC);
 
-    // ── Cargar imagen del hallazgo ───────────────────────────────────────
-    pw.MemoryImage? imageHallazgo;
-    final String? directUrl = _convertirUrlDrive(estadoAbierto['fotoUrl']);
-    if (directUrl != null) {
-      try {
-        final response = await http.get(Uri.parse(directUrl)).timeout(const Duration(seconds: 15));
-        if (response.statusCode == 200) imageHallazgo = pw.MemoryImage(response.bodyBytes);
-      } catch (_) { advertencias.add('No se pudo cargar la foto del hallazgo'); }
-    }
+    // ── Lanzar todas las descargas en paralelo (mismo patrón que ReportService) ──
+    final fotoFuture         = _cargarImagenHallazgo(estadoAbierto);
+    final logoFuture         = _cargarLogoGrupo(data['grupoId'] as String?);
+    final firmaInspFuture    = _cargarFirmaInspector(data['creadoPor'] as String?);
+    final firmaClienteFuture = _cargarFirmaCliente(estadoAbierto);
 
-    // ── Cargar logo del grupo desde Firestore ────────────────────────────
-    pw.MemoryImage? imagenLogo;
-    final String? grupoId = data['grupoId'] as String?;
-    if (grupoId != null) {
-      try {
-        final grupoDoc = await FirebaseFirestore.instance
-            .collection('grupos')
-            .doc(grupoId)
-            .get();
-        final String? logoUrl = _convertirUrlDrive(grupoDoc.data()?['logoUrl'] as String?);
-        if (logoUrl != null) {
-          final logoResp = await http.get(Uri.parse(logoUrl))
-              .timeout(const Duration(seconds: 15));
-          if (logoResp.statusCode == 200) {
-            imagenLogo = pw.MemoryImage(logoResp.bodyBytes);
-          }
-        }
-      } catch (_) {
-        advertencias.add('No se pudo cargar el logo de la empresa');
-      }
-    }
+    final pw.MemoryImage? imageHallazgo      = await fotoFuture;
+    final pw.MemoryImage? imagenLogo         = await logoFuture;
+    final pw.MemoryImage? imagenFirmaInspector = await firmaInspFuture;
+    final pw.MemoryImage? imagenFirmaCliente = await firmaClienteFuture;
 
-    // ── Cargar firma del inspector desde Firestore ───────────────────────
-    pw.MemoryImage? imagenFirmaInspector;
-    final String? creadoPor = data['creadoPor'] as String?;
-    if (creadoPor != null) {
-      try {
-        final userDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(creadoPor)
-            .get();
-        final String? firmaUrl = _convertirUrlDrive(userDoc.data()?['firmaUrl'] as String?);
-        if (firmaUrl != null) {
-          final firmaResp = await http.get(Uri.parse(firmaUrl))
-              .timeout(const Duration(seconds: 15));
-          if (firmaResp.statusCode == 200) {
-            imagenFirmaInspector = pw.MemoryImage(firmaResp.bodyBytes);
-          }
-        }
-      } catch (_) {
-        advertencias.add('No se pudo cargar la firma del inspector');
-      }
-    }
-
-    // ── Cargar firma del cliente desde el estado del caso ────────────────
-    pw.MemoryImage? imagenFirmaCliente;
-    final String? firmaClienteUrl = _convertirUrlDrive(
-        estadoAbierto['firmaClienteUrl'] as String?);
-    if (firmaClienteUrl != null) {
-      try {
-        final firmaClienteResp = await http.get(Uri.parse(firmaClienteUrl))
-            .timeout(const Duration(seconds: 15));
-        if (firmaClienteResp.statusCode == 200) {
-          imagenFirmaCliente = pw.MemoryImage(firmaClienteResp.bodyBytes);
-        }
-      } catch (_) {
-        advertencias.add('No se pudo cargar la firma del cliente');
-      }
-    }
+    if (imageHallazgo == null      && (estadoAbierto['fotoUrl']        as String?) != null) advertencias.add('No se pudo cargar la foto del hallazgo');
+    if (imagenFirmaInspector == null && (data['creadoPor']             as String?) != null) advertencias.add('No se pudo cargar la firma del inspector');
+    if (imagenFirmaCliente == null && (estadoAbierto['firmaClienteUrl'] as String?) != null) advertencias.add('No se pudo cargar la firma del cliente');
 
     pdf.addPage(
       pw.MultiPage(
@@ -140,7 +159,7 @@ class PdfService {
   /// Abre el visor de impresión/PDF nativo del dispositivo.
   /// Retorna lista de advertencias (fotos/firmas que no se pudieron cargar).
   static Future<List<String>> generarReportePDF(Case? caso, Map<String, dynamic> data) async {
-    final result = await _buildPdfBytes(caso, data);
+    final result = await buildPdfBytes(caso, data);
     await Printing.layoutPdf(
       onLayout: (_) async => result.bytes,
       name: result.nombre,
@@ -151,12 +170,51 @@ class PdfService {
   /// Abre el menú nativo de compartir (WhatsApp, correo, Drive, etc.).
   /// Retorna lista de advertencias (fotos/firmas que no se pudieron cargar).
   static Future<List<String>> compartirReportePDF(Case? caso, Map<String, dynamic> data) async {
-    final result = await _buildPdfBytes(caso, data);
+    final result = await buildPdfBytes(caso, data);
     await Printing.sharePdf(
       bytes: result.bytes,
       filename: result.nombre,
     );
     return result.advertencias;
+  }
+
+  // ── Helpers de carga de recursos (usados en paralelo desde buildPdfBytes) ──
+
+  static Future<pw.MemoryImage?> _cargarImagenHallazgo(
+      Map<String, dynamic> estadoAbierto) async {
+    final bytes = await _descargarImagen(estadoAbierto['fotoUrl'] as String?);
+    return bytes != null ? pw.MemoryImage(bytes) : null;
+  }
+
+  static Future<pw.MemoryImage?> _cargarLogoGrupo(String? grupoId) async {
+    if (grupoId == null) return null;
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('grupos').doc(grupoId).get();
+      final bytes = await _descargarImagen(doc.data()?['logoUrl'] as String?);
+      return bytes != null ? pw.MemoryImage(bytes) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<pw.MemoryImage?> _cargarFirmaInspector(String? creadoPor) async {
+    if (creadoPor == null) return null;
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users').doc(creadoPor).get();
+      final bytes = await _descargarImagen(doc.data()?['firmaUrl'] as String?);
+      return bytes != null ? pw.MemoryImage(bytes) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<pw.MemoryImage?> _cargarFirmaCliente(
+      Map<String, dynamic> estadoAbierto) async {
+    final bytes = await _descargarImagen(
+        estadoAbierto['firmaClienteUrl'] as String?);
+    return bytes != null ? pw.MemoryImage(bytes) : null;
   }
 
   static String? _obtenerValor(String? objetoVal, dynamic mapaVal) {

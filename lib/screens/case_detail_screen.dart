@@ -402,6 +402,9 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
           Navigator.push(context, MaterialPageRoute(
             builder: (context) => ReportScreen(
               casoId: _ctrl.casoId!,
+              grupoId: _ctrl.grupoId,
+              empresaId: _ctrl.empresaId,
+              centroId: _ctrl.centroId,
               casoData: _ctrl.casoData,
             ),
           ));

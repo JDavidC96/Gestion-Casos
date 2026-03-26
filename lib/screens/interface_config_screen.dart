@@ -164,7 +164,23 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
     }
   }
 
+  /// Verifica si hay al menos un subtipo habilitado en toda la configuración.
+  bool _hayAlMenosUnSubtipoHabilitado() {
+    return _subtiposHabilitados.values.any((v) => v == true);
+  }
+
   Future<void> _guardarConfiguracion() async {
+    // Validar que haya al menos un tipo de peligro seleccionado
+    if (!_todosLosSubtipos && !_hayAlMenosUnSubtipoHabilitado()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Debe haber al menos un tipo de peligro habilitado'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
@@ -352,8 +368,11 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
       // Si ninguno esta habilitado la dejamos en false (desactivada por el usuario).
     }
 
-    // Verificar si todos los subtipos estan seleccionados
-    _todosLosSubtipos = _subtiposHabilitados.values.every((value) => value == true);
+    // FIX: Verificar que TODOS estén seleccionados Y que haya al menos uno.
+    // Sin la segunda condición, .every() devuelve true sobre una lista vacía
+    // y reactiva el switch "Usar todos" cuando se desactiva el último subtipo.
+    final valores = _subtiposHabilitados.values;
+    _todosLosSubtipos = valores.isNotEmpty && valores.every((value) => value == true);
   }
 
   @override

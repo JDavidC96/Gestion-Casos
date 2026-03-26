@@ -1,5 +1,7 @@
 // lib/screens/report_screen.dart
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:printing/printing.dart';
 import '../services/firebase_service.dart';
 import '../models/case_model.dart';
 import '../services/pdf_service.dart';
@@ -31,6 +33,12 @@ class _ReportScreenState extends State<ReportScreen> {
   Map<String, dynamic>? _casoData;
   Case? _casoObjeto;
   bool _isLoading = true;
+
+  // ── Caché del PDF pre-construido ─────────────────────────────────────────
+  bool _isPreparing = false;          // descargando imágenes y compilando PDF
+  Uint8List? _pdfBytes;               // bytes listos para usar sin recompilar
+  String? _pdfNombre;                 // nombre del archivo
+  List<String> _advertencias = [];    // advertencias de la última compilación
 
   @override
   void initState() {
@@ -106,20 +114,47 @@ class _ReportScreenState extends State<ReportScreen> {
     );
   }
 
+  /// Pre-construye el PDF (descarga imágenes/firmas) y lo guarda en caché.
+  /// Si ya existe caché, lo reutiliza directamente.
+  Future<bool> _asegurarPdfListo() async {
+    if (_pdfBytes != null) return true;                   // ya compilado
+    if (_casoData == null) return false;
+
+    setState(() => _isPreparing = true);
+    try {
+      final result = await PdfService.buildPdfBytes(_casoObjeto, _casoData!);
+      if (mounted) {
+        setState(() {
+          _pdfBytes      = result.bytes;
+          _pdfNombre     = result.nombre;
+          _advertencias  = result.advertencias;
+          _isPreparing   = false;
+        });
+      }
+      return true;
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isPreparing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error preparando PDF: $e'), backgroundColor: Colors.red),
+        );
+      }
+      return false;
+    }
+  }
+
   Future<void> _handleGenerarReporte() async {
-    if (_casoData == null) return;
+    if (_isGenerating || _isSharing || _isPreparing) return;
+    final listo = await _asegurarPdfListo();
+    if (!listo || !mounted) return;
+
     setState(() => _isGenerating = true);
     try {
-      final advertencias = await PdfService.generarReportePDF(_casoObjeto, _casoData!);
-      if (mounted) {
-        if (advertencias.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('PDF generado con éxito'), backgroundColor: Colors.green),
-          );
-        } else {
-          _mostrarAdvertencias(advertencias);
-        }
-      }
+      await Printing.layoutPdf(
+        onLayout: (_) async => _pdfBytes!,
+        name: _pdfNombre ?? 'Reporte.pdf',
+      );
+      if (mounted) _mostrarAdvertencias(_advertencias);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -132,13 +167,17 @@ class _ReportScreenState extends State<ReportScreen> {
   }
 
   Future<void> _handleCompartir() async {
-    if (_casoData == null) return;
+    if (_isGenerating || _isSharing || _isPreparing) return;
+    final listo = await _asegurarPdfListo();
+    if (!listo || !mounted) return;
+
     setState(() => _isSharing = true);
     try {
-      final advertencias = await PdfService.compartirReportePDF(_casoObjeto, _casoData!);
-      if (mounted) {
-        _mostrarAdvertencias(advertencias);
-      }
+      await Printing.sharePdf(
+        bytes: _pdfBytes!,
+        filename: _pdfNombre ?? 'Reporte.pdf',
+      );
+      if (mounted) _mostrarAdvertencias(_advertencias);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -153,7 +192,7 @@ class _ReportScreenState extends State<ReportScreen> {
   @override
   Widget build(BuildContext context) {
     final isCerrado = _casoData?['cerrado'] == true;
-    final bool ocupado = _isGenerating || _isSharing;
+    final bool ocupado = _isGenerating || _isSharing || _isPreparing;
 
     return Scaffold(
       appBar: AppBar(
@@ -162,88 +201,183 @@ class _ReportScreenState extends State<ReportScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: [
-                  // ── Tarjeta de información del caso ──────────────
-                  Card(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                    elevation: 5,
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        children: [
-                          Icon(
-                            isCerrado ? Icons.task_alt : Icons.warning_amber_rounded,
-                            size: 60,
-                            color: isCerrado ? AppColors.success : AppColors.warning,
+          : Stack(
+              children: [
+                // ── Contenido principal ──────────────────────────────────
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: [
+                      // ── Tarjeta de información del caso ───────────────
+                      Card(
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                        elevation: 5,
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            children: [
+                              Icon(
+                                isCerrado ? Icons.task_alt : Icons.warning_amber_rounded,
+                                size: 60,
+                                color: isCerrado ? AppColors.success : AppColors.warning,
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                _casoData?['nombre'] ?? "Sin nombre",
+                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                textAlign: TextAlign.center,
+                              ),
+                              const Divider(),
+                              _rowInfo("Empresa:", _casoData?['empresaNombre'] ?? "N/A"),
+                              _rowInfo("Estado:", isCerrado ? "Cerrado" : "Abierto"),
+                            ],
                           ),
-                          const SizedBox(height: 10),
-                          Text(
-                            _casoData?['nombre'] ?? "Sin nombre",
-                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                            textAlign: TextAlign.center,
+                        ),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      // ── Indicador de estado del PDF ───────────────────
+                      _buildEstadoPdf(),
+
+                      const Spacer(),
+
+                      // ── Botón: Ver / Imprimir PDF ─────────────────────
+                      SizedBox(
+                        width: double.infinity,
+                        height: 56,
+                        child: ElevatedButton.icon(
+                          onPressed: ocupado ? null : _handleGenerarReporte,
+                          icon: _isGenerating
+                              ? const SizedBox(
+                                  width: 20, height: 20,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                )
+                              : const Icon(Icons.picture_as_pdf),
+                          label: Text(_isGenerating ? "ABRIENDO..." : "VER / IMPRIMIR PDF"),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.pdfButton,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
-                          const Divider(),
-                          _rowInfo("Empresa:", _casoData?['empresaNombre'] ?? "N/A"),
-                          _rowInfo("Estado:", isCerrado ? "Cerrado" : "Abierto"),
-                        ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      // ── Botón: Compartir (WhatsApp, correo, Drive…) ───
+                      SizedBox(
+                        width: double.infinity,
+                        height: 56,
+                        child: ElevatedButton.icon(
+                          onPressed: ocupado ? null : _handleCompartir,
+                          icon: _isSharing
+                              ? const SizedBox(
+                                  width: 20, height: 20,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                )
+                              : const Icon(Icons.share),
+                          label: Text(_isSharing ? "PREPARANDO..." : "COMPARTIR PDF"),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.shareButton,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 8),
+                    ],
+                  ),
+                ),
+
+                // ── Overlay de preparación ────────────────────────────
+                if (_isPreparing)
+                  Container(
+                    color: Colors.black45,
+                    child: Center(
+                      child: Card(
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: const [
+                              CircularProgressIndicator(),
+                              SizedBox(height: 20),
+                              Text(
+                                "Preparando PDF…",
+                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                              ),
+                              SizedBox(height: 6),
+                              Text(
+                                "Cargando fotos y firmas",
+                                style: TextStyle(fontSize: 13, color: Colors.grey),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
+              ],
+            ),
+    );
+  }
 
-                  const Spacer(),
+  /// Pequeño widget que muestra el estado actual del PDF cacheado.
+  Widget _buildEstadoPdf() {
+    if (_isPreparing) return const SizedBox.shrink();
 
-                  // ── Botón: Ver / Imprimir PDF ─────────────────────
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: ElevatedButton.icon(
-                      onPressed: ocupado ? null : _handleGenerarReporte,
-                      icon: _isGenerating
-                          ? const SizedBox(
-                              width: 20, height: 20,
-                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                            )
-                          : const Icon(Icons.picture_as_pdf),
-                      label: Text(_isGenerating ? "GENERANDO..." : "VER / IMPRIMIR PDF"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.pdfButton,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // ── Botón: Compartir (WhatsApp, correo, Drive…) ───
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: ElevatedButton.icon(
-                      onPressed: ocupado ? null : _handleCompartir,
-                      icon: _isSharing
-                          ? const SizedBox(
-                              width: 20, height: 20,
-                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                            )
-                          : const Icon(Icons.share),
-                      label: Text(_isSharing ? "PREPARANDO..." : "COMPARTIR PDF"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.shareButton,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 8),
-                ],
+    if (_pdfBytes != null) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.green.shade50,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.green.shade300),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.check_circle_outline, color: Colors.green.shade700, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                "PDF listo · toca un botón para ver o compartir",
+                style: TextStyle(fontSize: 13, color: Colors.green.shade800),
               ),
             ),
+            // Botón para regenerar si el usuario quiere refrescar
+            GestureDetector(
+              onTap: () => setState(() { _pdfBytes = null; _pdfNombre = null; _advertencias = []; }),
+              child: Icon(Icons.refresh, size: 18, color: Colors.green.shade600),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Aún no preparado — invita al usuario a pulsar un botón
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.blue.shade200),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline, color: Colors.blue.shade600, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              "Toca un botón para preparar el PDF con fotos y firmas",
+              style: TextStyle(fontSize: 13, color: Colors.blue.shade800),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
