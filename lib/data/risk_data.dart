@@ -209,8 +209,59 @@ final List<Map<String, dynamic>> matrizPeligros = [
   },
 ];
 
+// ===== ÍCONOS CURADOS PARA CATEGORÍAS PERSONALIZADAS =====
+// Se usan nombres string para serializar en Firestore (IconData no es serializable)
+const Map<String, IconData> riskIconMap = {
+  'warning':       Icons.warning_amber,
+  'fire':          Icons.local_fire_department,
+  'health_safety': Icons.health_and_safety,
+  'construction':  Icons.construction,
+  'factory':       Icons.factory,
+  'water':         Icons.water_drop,
+  'air':           Icons.air,
+  'dangerous':     Icons.dangerous,
+  'bolt':          Icons.bolt,
+  'handyman':      Icons.handyman,
+  'truck':         Icons.local_shipping,
+  'hospital':      Icons.local_hospital,
+  'security':      Icons.security,
+  'nature':        Icons.park,
+  'thermostat':    Icons.thermostat,
+  'hearing':       Icons.hearing,
+  'visibility':    Icons.visibility,
+  'hand':          Icons.back_hand,
+  'masks':         Icons.masks,
+  'bug':           Icons.bug_report,
+};
+
+// Etiquetas legibles para el picker de íconos
+const Map<String, String> riskIconLabels = {
+  'warning':       'Advertencia',
+  'fire':          'Incendio',
+  'health_safety': 'Salud',
+  'construction':  'Construcción',
+  'factory':       'Industrial',
+  'water':         'Agua',
+  'air':           'Aire',
+  'dangerous':     'Peligroso',
+  'bolt':          'Eléctrico',
+  'handyman':      'Mantenimiento',
+  'truck':         'Transporte',
+  'hospital':      'Médico',
+  'security':      'Seguridad',
+  'nature':        'Natural',
+  'thermostat':    'Temperatura',
+  'hearing':       'Ruido',
+  'visibility':    'Visibilidad',
+  'hand':          'Ergonómico',
+  'masks':         'Respiratorio',
+  'bug':           'Biológico',
+};
+
 // ===== MÉTODOS DE AYUDA =====
 class RiskData {
+  // ── Helpers para la matriz estándar ──────────────────────────────────────
+
   static List<String> getCategorias() {
     return matrizPeligros.map((categoria) => categoria["categoria"] as String).toList();
   }
@@ -240,6 +291,88 @@ class RiskData {
   static int getNumeroCategoria(String categoriaNombre) {
     final categoria = getCategoriaPorNombre(categoriaNombre);
     return categoria != null ? categoria["numeroCategoria"] as int : 0;
+  }
+
+  // ── Helpers para íconos serializables ────────────────────────────────────
+
+  /// Convierte un nombre de ícono (string de Firestore) a IconData.
+  static IconData getIconDataFromName(String name) =>
+      riskIconMap[name] ?? Icons.category;
+
+  // ── Helpers para colores serializables ───────────────────────────────────
+
+  /// Convierte un hex "#RRGGBB" a Color.
+  static Color getColorFromHex(String hex) {
+    try {
+      final clean = hex.replaceFirst('#', '');
+      return Color(int.parse('FF$clean', radix: 16));
+    } catch (_) {
+      return Colors.blue;
+    }
+  }
+
+  /// Convierte un Color a hex "#RRGGBB".
+  static String getHexFromColor(Color color) =>
+      '#${(color.value & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
+
+  // ── Helpers para lista MEZCLADA (estándar + personalizadas) ──────────────
+
+  /// Siguiente número de categoría disponible para una nueva categoría personalizada.
+  static int getNextNumeroCategoria(List<Map<String, dynamic>> personalizadas) {
+    if (personalizadas.isEmpty) return matrizPeligros.length + 1;
+    final maxNum = personalizadas
+        .map((c) => (c['numeroCategoria'] as int?) ?? 0)
+        .reduce((a, b) => a > b ? a : b);
+    return maxNum + 1;
+  }
+
+  /// Ícono para una categoría, buscando tanto en la lista estándar como en una
+  /// lista personalizada. Las personalizadas usan el campo 'iconName' (String).
+  static IconData getIconPorCategoriaFromAll(
+      String nombre, List<Map<String, dynamic>> todas) {
+    final cat = todas.firstWhere(
+      (c) => c['categoria'] == nombre,
+      orElse: () => <String, dynamic>{},
+    );
+    if (cat.isEmpty) return Icons.help;
+    if (cat['iconName'] != null) return getIconDataFromName(cat['iconName'] as String);
+    return (cat['icon'] as IconData?) ?? Icons.help;
+  }
+
+  /// Color para una categoría en la lista mezclada.
+  /// Las personalizadas usan el campo 'colorHex' (String).
+  static Color getColorPorCategoriaFromAll(
+      String nombre, List<Map<String, dynamic>> todas) {
+    final cat = todas.firstWhere(
+      (c) => c['categoria'] == nombre,
+      orElse: () => <String, dynamic>{},
+    );
+    if (cat.isEmpty) return Colors.grey;
+    if (cat['colorHex'] != null) return getColorFromHex(cat['colorHex'] as String);
+    return (cat['color'] as Color?) ?? Colors.grey;
+  }
+
+  /// Número de categoría en la lista mezclada.
+  static int getNumeroCategoriaFromAll(
+      String nombre, List<Map<String, dynamic>> todas) {
+    final cat = todas.firstWhere(
+      (c) => c['categoria'] == nombre,
+      orElse: () => <String, dynamic>{},
+    );
+    return (cat['numeroCategoria'] as int?) ?? 0;
+  }
+
+  /// Subgrupos de una categoría en la lista mezclada.
+  static List<String> getSubgruposPorCategoriaFromAll(
+      String nombre, List<Map<String, dynamic>> todas) {
+    final cat = todas.firstWhere(
+      (c) => c['categoria'] == nombre,
+      orElse: () => <String, dynamic>{},
+    );
+    if (cat.isEmpty) return [];
+    final subs = cat['subgrupos'];
+    if (subs is List) return List<String>.from(subs);
+    return [];
   }
 }
 

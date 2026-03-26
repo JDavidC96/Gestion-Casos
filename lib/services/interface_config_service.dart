@@ -96,7 +96,7 @@ class InterfaceConfigService {
   static Future<Color> getPrimaryColor(String grupoId) async {
     final config = await getConfigInterfaz(grupoId);
     final colorName = config['colorPrimario'] ?? 'blue';
-    return getColorFromString(colorName); // CAMBIO: Método público
+    return getColorFromString(colorName);
   }
 
   // Obtener tema del grupo
@@ -114,53 +114,40 @@ class InterfaceConfigService {
     }
   }
 
-  // Métodos de utilidad para colores - AHORA PÚBLICO
+  // Métodos de utilidad para colores - PÚBLICO
   static Color getColorFromString(String colorName) {
     switch (colorName) {
-      case 'blue':
-        return Colors.blue;
-      case 'green':
-        return Colors.green;
-      case 'orange':
-        return Colors.orange;
-      case 'purple':
-        return Colors.purple;
-      case 'red':
-        return Colors.red;
-      case 'teal':
-        return Colors.teal;
-      case 'indigo':
-        return Colors.indigo;
-      case 'pink':
-        return Colors.pink;
-      case 'amber':
-        return Colors.amber;
-      case 'cyan':
-        return Colors.cyan;
-      case 'deepOrange':
-        return Colors.deepOrange;
-      case 'brown':
-        return Colors.brown;
-      default:
-        return Colors.blue;
+      case 'blue':       return Colors.blue;
+      case 'green':      return Colors.green;
+      case 'orange':     return Colors.orange;
+      case 'purple':     return Colors.purple;
+      case 'red':        return Colors.red;
+      case 'teal':       return Colors.teal;
+      case 'indigo':     return Colors.indigo;
+      case 'pink':       return Colors.pink;
+      case 'amber':      return Colors.amber;
+      case 'cyan':       return Colors.cyan;
+      case 'deepOrange': return Colors.deepOrange;
+      case 'brown':      return Colors.brown;
+      default:           return Colors.blue;
     }
   }
 
   // Obtener lista de colores disponibles
   static List<Map<String, dynamic>> getAvailableColors() {
     return [
-      {'name': 'blue', 'label': 'Azul', 'color': Colors.blue},
-      {'name': 'green', 'label': 'Verde', 'color': Colors.green},
-      {'name': 'orange', 'label': 'Naranja', 'color': Colors.orange},
-      {'name': 'purple', 'label': 'Morado', 'color': Colors.purple},
-      {'name': 'red', 'label': 'Rojo', 'color': Colors.red},
-      {'name': 'teal', 'label': 'Verde Azulado', 'color': Colors.teal},
-      {'name': 'indigo', 'label': 'Índigo', 'color': Colors.indigo},
-      {'name': 'pink', 'label': 'Rosa', 'color': Colors.pink},
-      {'name': 'amber', 'label': 'Ámbar', 'color': Colors.amber},
-      {'name': 'cyan', 'label': 'Cian', 'color': Colors.cyan},
-      {'name': 'deepOrange', 'label': 'Naranja Oscuro', 'color': Colors.deepOrange},
-      {'name': 'brown', 'label': 'Marrón', 'color': Colors.brown},
+      {'name': 'blue',       'label': 'Azul',           'color': Colors.blue},
+      {'name': 'green',      'label': 'Verde',           'color': Colors.green},
+      {'name': 'orange',     'label': 'Naranja',         'color': Colors.orange},
+      {'name': 'purple',     'label': 'Morado',          'color': Colors.purple},
+      {'name': 'red',        'label': 'Rojo',            'color': Colors.red},
+      {'name': 'teal',       'label': 'Verde Azulado',   'color': Colors.teal},
+      {'name': 'indigo',     'label': 'Índigo',          'color': Colors.indigo},
+      {'name': 'pink',       'label': 'Rosa',            'color': Colors.pink},
+      {'name': 'amber',      'label': 'Ámbar',           'color': Colors.amber},
+      {'name': 'cyan',       'label': 'Cian',            'color': Colors.cyan},
+      {'name': 'deepOrange', 'label': 'Naranja Oscuro',  'color': Colors.deepOrange},
+      {'name': 'brown',      'label': 'Marrón',          'color': Colors.brown},
     ];
   }
 
@@ -168,8 +155,8 @@ class InterfaceConfigService {
   static List<Map<String, dynamic>> getAvailableThemes() {
     return [
       {'value': 'default', 'label': 'Sistema'},
-      {'value': 'light', 'label': 'Claro'},
-      {'value': 'dark', 'label': 'Oscuro'},
+      {'value': 'light',   'label': 'Claro'},
+      {'value': 'dark',    'label': 'Oscuro'},
     ];
   }
 
@@ -240,5 +227,81 @@ class InterfaceConfigService {
     } catch (e) {
       rethrow;
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  CATEGORÍAS PERSONALIZADAS
+  //  Se guardan en grupos/{grupoId}.categoriasPersonalizadas (array)
+  //  Estructura de cada elemento:
+  //  {
+  //    "id": "cat_1234567890",
+  //    "categoria": "Nombre",
+  //    "numeroCategoria": 14,
+  //    "subgrupos": ["Sub 1", "Sub 2"],
+  //    "iconName": "warning",    // key de riskIconMap
+  //    "colorHex": "#E53935",
+  //    "esPersonalizada": true
+  //  }
+  // ═══════════════════════════════════════════════════════════════════
+
+  /// Obtiene todas las categorías personalizadas de un grupo.
+  static Future<List<Map<String, dynamic>>> getCategoriasPersonalizadas(
+      String grupoId) async {
+    try {
+      final doc = await _firestore.collection('grupos').doc(grupoId).get();
+      final raw = doc.data()?['categoriasPersonalizadas'] as List<dynamic>? ?? [];
+      return raw
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Agrega una nueva categoría personalizada al grupo.
+  static Future<void> addCategoriaPersonalizada(
+    String grupoId,
+    Map<String, dynamic> categoria,
+  ) async {
+    await _firestore.collection('grupos').doc(grupoId).update({
+      'categoriasPersonalizadas': FieldValue.arrayUnion([categoria]),
+    });
+  }
+
+  /// Actualiza una categoría personalizada existente (identifica por 'id').
+  static Future<void> updateCategoriaPersonalizada(
+    String grupoId,
+    Map<String, dynamic> categoriaActualizada,
+  ) async {
+    final doc = await _firestore.collection('grupos').doc(grupoId).get();
+    final raw = doc.data()?['categoriasPersonalizadas'] as List<dynamic>? ?? [];
+    final lista = raw
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+
+    final idx = lista.indexWhere((c) => c['id'] == categoriaActualizada['id']);
+    if (idx != -1) {
+      lista[idx] = categoriaActualizada;
+      await _firestore.collection('grupos').doc(grupoId).update({
+        'categoriasPersonalizadas': lista,
+      });
+    }
+  }
+
+  /// Elimina una categoría personalizada por su 'id'.
+  static Future<void> deleteCategoriaPersonalizada(
+    String grupoId,
+    String categoriaId,
+  ) async {
+    final doc = await _firestore.collection('grupos').doc(grupoId).get();
+    final raw = doc.data()?['categoriasPersonalizadas'] as List<dynamic>? ?? [];
+    final lista = raw
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .where((c) => c['id'] != categoriaId)
+        .toList();
+
+    await _firestore.collection('grupos').doc(grupoId).update({
+      'categoriasPersonalizadas': lista,
+    });
   }
 }

@@ -51,11 +51,13 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
     super.didChangeDependencies();
     if (!_configLoaded) {
       _configLoaded = true;
-      final config = Provider.of<InterfaceConfigProvider>(context, listen: false).currentConfig;
+      final provider = Provider.of<InterfaceConfigProvider>(context, listen: false);
+      final config = provider.currentConfig;
+      final personalizadas = provider.categoriasPersonalizadas;
       final defaultNivel = config['nivelPeligroDefault'] as String? ?? 'Medio';
-      final cats = _getCategoriasDisponibles(config);
+      final cats = _getCategoriasDisponibles(config, personalizadas);
       final primeraCat = cats.isNotEmpty ? cats[0] : 'Físico';
-      final subs = _getSubgruposDisponibles(config, primeraCat);
+      final subs = _getSubgruposDisponibles(config, personalizadas, primeraCat);
       setState(() {
         _selectednivelPeligro = defaultNivel;
         _selectedCategoria = primeraCat;
@@ -64,29 +66,59 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
     }
   }
 
-  // Devuelve las categorías habilitadas según la configuración del grupo
-  List<String> _getCategoriasDisponibles(Map<String, dynamic> config) {
+  /// Devuelve las categorías habilitadas según la configuración del grupo,
+  /// incluyendo las categorías personalizadas.
+  List<String> _getCategoriasDisponibles(
+    Map<String, dynamic> config,
+    List<Map<String, dynamic>> personalizadas,
+  ) {
     final todosSubtipos = config['todosLosSubtipos'] as bool? ?? true;
-    final todas = RiskData.getCategorias();
+
+    // Lista completa: estándar + personalizadas
+    final todasEstandar = RiskData.getCategorias();
+    final todasPersonalizadas =
+        personalizadas.map((c) => c['categoria'] as String).toList();
+    final todas = [...todasEstandar, ...todasPersonalizadas];
+
     if (todosSubtipos) return todas;
-    final habilitadas = config['categoriasHabilitadas'] as Map<String, dynamic>? ?? {};
+
+    final habilitadas =
+        config['categoriasHabilitadas'] as Map<String, dynamic>? ?? {};
     final filtradas = todas.where((c) => habilitadas[c] == true).toList();
     return filtradas.isNotEmpty ? filtradas : todas;
   }
 
-  // Devuelve los subtipos habilitados + personalizados para una categoría
-  List<String> _getSubgruposDisponibles(Map<String, dynamic> config, String categoria) {
+  /// Devuelve los subtipos habilitados + personalizados para una categoría,
+  /// incluyendo subgrupos de categorías personalizadas.
+  List<String> _getSubgruposDisponibles(
+    Map<String, dynamic> config,
+    List<Map<String, dynamic>> personalizadas,
+    String categoria,
+  ) {
     final todosSubtipos = config['todosLosSubtipos'] as bool? ?? true;
-    final base = RiskData.getSubgruposPorCategoria(categoria);
+
+    // Construir lista mezclada para buscar subgrupos
+    final todasLasCats = [...matrizPeligros, ...personalizadas];
+
+    // Subgrupos base de la categoría (estándar o personalizada)
+    final base = RiskData.getSubgruposPorCategoriaFromAll(categoria, todasLasCats);
+
     if (todosSubtipos) return base;
-    final habilitados = config['subtiposHabilitados'] as Map<String, dynamic>? ?? {};
-    final personalizadosRaw = config['subtiposPersonalizados'] as Map<String, dynamic>? ?? {};
-    final personalizados = (personalizadosRaw[categoria] as List<dynamic>? ?? [])
-        .cast<String>()
-        .where((s) => habilitados[s] != false)
-        .toList();
+
+    final habilitados =
+        config['subtiposHabilitados'] as Map<String, dynamic>? ?? {};
+    final personalizadosRaw =
+        config['subtiposPersonalizados'] as Map<String, dynamic>? ?? {};
+
+    // Subtipos personalizados dentro de categorías estándar
+    final subtiposPersonalizadosEnCat =
+        (personalizadosRaw[categoria] as List<dynamic>? ?? [])
+            .cast<String>()
+            .where((s) => habilitados[s] != false)
+            .toList();
+
     final filtrados = base.where((s) => habilitados[s] == true).toList();
-    final result = [...filtrados, ...personalizados];
+    final result = [...filtrados, ...subtiposPersonalizadosEnCat];
     return result.isNotEmpty ? result : base;
   }
 
@@ -122,6 +154,14 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
 
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final configProvider =
+          Provider.of<InterfaceConfigProvider>(context, listen: false);
+
+      // Lista mezclada para resolver el número de categoría
+      final todasLasCats = [
+        ...matrizPeligros,
+        ...configProvider.categoriasPersonalizadas,
+      ];
 
       final casoData = {
         'empresaId': widget.empresaId,
@@ -134,12 +174,12 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
         'centroNombre': widget.centroNombre,
         'grupoId': grupoId,
         'grupoNombre': widget.grupoNombre,
-        'numeroCategoria': RiskData.getNumeroCategoria(_selectedCategoria),
+        'numeroCategoria':
+            RiskData.getNumeroCategoriaFromAll(_selectedCategoria, todasLasCats),
         'creadoPor': authProvider.userData?['uid'],
       };
 
       // Solo agregar nivel de peligro si está habilitado en la configuración
-      final configProvider = Provider.of<InterfaceConfigProvider>(context, listen: false);
       if (configProvider.isFeatureEnabled('mostrarNivelPeligroEnDialog')) {
         casoData['nivelPeligro'] = _selectednivelPeligro;
       }
@@ -189,9 +229,14 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
     }
   }
 
-  Widget _buildCategoriaSelector(List<String> categorias) {
+  Widget _buildCategoriaSelector(
+    List<String> categorias,
+    List<Map<String, dynamic>> todasLasCats,
+  ) {
     return DropdownButtonFormField<String>(
-      value: categorias.contains(_selectedCategoria) ? _selectedCategoria : (categorias.isNotEmpty ? categorias[0] : null),
+      value: categorias.contains(_selectedCategoria)
+          ? _selectedCategoria
+          : (categorias.isNotEmpty ? categorias[0] : null),
       isExpanded: true,
       decoration: const InputDecoration(
         labelText: "Categoría de Peligro",
@@ -203,8 +248,10 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
                 child: Row(
                   children: [
                     Icon(
-                      RiskData.getIconPorCategoria(categoria),
-                      color: RiskData.getColorPorCategoria(categoria),
+                      RiskData.getIconPorCategoriaFromAll(
+                          categoria, todasLasCats),
+                      color: RiskData.getColorPorCategoriaFromAll(
+                          categoria, todasLasCats),
                       size: 20,
                     ),
                     const SizedBox(width: 12),
@@ -212,7 +259,6 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
                       child: Text(
                         categoria,
                         overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
                       ),
                     ),
                   ],
@@ -221,8 +267,14 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
           .toList(),
       onChanged: (value) {
         if (value != null) {
-          final config = Provider.of<InterfaceConfigProvider>(context, listen: false).currentConfig;
-          final subs = _getSubgruposDisponibles(config, value);
+          final config =
+              Provider.of<InterfaceConfigProvider>(context, listen: false)
+                  .currentConfig;
+          final personalizadas =
+              Provider.of<InterfaceConfigProvider>(context, listen: false)
+                  .categoriasPersonalizadas;
+          final subs =
+              _getSubgruposDisponibles(config, personalizadas, value);
           setState(() {
             _selectedCategoria = value;
             _selectedSubgrupo = subs.isNotEmpty ? subs[0] : null;
@@ -240,19 +292,18 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
 
   Widget _buildSubgrupoSelector(List<String> subgrupos) {
     return DropdownButtonFormField<String>(
-      value: subgrupos.contains(_selectedSubgrupo) ? _selectedSubgrupo : (subgrupos.isNotEmpty ? subgrupos[0] : null),
+      value: subgrupos.contains(_selectedSubgrupo) ? _selectedSubgrupo : null,
+      isExpanded: true,
       decoration: const InputDecoration(
-        labelText: "Tipo Específico",
+        labelText: "Tipo específico",
         border: OutlineInputBorder(),
       ),
-      isExpanded: true,
       items: subgrupos
           .map((subgrupo) => DropdownMenuItem(
                 value: subgrupo,
                 child: Text(
                   subgrupo,
                   overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
                 ),
               ))
           .toList(),
@@ -316,9 +367,24 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
   Widget build(BuildContext context) {
     final configProvider = Provider.of<InterfaceConfigProvider>(context);
     final config = configProvider.currentConfig;
-    final categoriasDisponibles = _getCategoriasDisponibles(config);
-    final subgruposDisponibles = _getSubgruposDisponibles(config, _selectedCategoria.isNotEmpty ? _selectedCategoria : (categoriasDisponibles.isNotEmpty ? categoriasDisponibles[0] : 'Físico'));
-    final mostrarNivelPeligro = config['mostrarNivelPeligroEnDialog'] as bool? ?? false;
+    final personalizadas = configProvider.categoriasPersonalizadas;
+
+    // Lista mezclada para íconos y colores
+    final todasLasCats = [...matrizPeligros, ...personalizadas];
+
+    final categoriasDisponibles =
+        _getCategoriasDisponibles(config, personalizadas);
+    final subgruposDisponibles = _getSubgruposDisponibles(
+      config,
+      personalizadas,
+      _selectedCategoria.isNotEmpty
+          ? _selectedCategoria
+          : (categoriasDisponibles.isNotEmpty
+              ? categoriasDisponibles[0]
+              : 'Físico'),
+    );
+    final mostrarNivelPeligro =
+        config['mostrarNivelPeligroEnDialog'] as bool? ?? false;
 
     return Dialog(
       insetPadding: const EdgeInsets.all(20),
@@ -362,7 +428,8 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
                             children: [
                               Row(
                                 children: [
-                                  Icon(widget.empresa.icon, color: Colors.blue[700], size: 20),
+                                  Icon(widget.empresa.icon,
+                                      color: Colors.blue[700], size: 20),
                                   const SizedBox(width: 8),
                                   Text(
                                     'Empresa: ${widget.empresa.nombre}',
@@ -379,7 +446,9 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
                                 const SizedBox(height: 4),
                                 Row(
                                   children: [
-                                    const Icon(Icons.business_center, color: Color.fromARGB(255, 25, 118, 210), size: 16),
+                                    const Icon(Icons.business_center,
+                                        color: Color.fromARGB(255, 25, 118, 210),
+                                        size: 16),
                                     const SizedBox(width: 8),
                                     Text(
                                       'Centro: ${widget.centroNombre}',
@@ -395,7 +464,9 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
                                 const SizedBox(height: 4),
                                 Row(
                                   children: [
-                                    const Icon(Icons.group, color: Color.fromARGB(255, 25, 118, 210), size: 16),
+                                    const Icon(Icons.group,
+                                        color: Color.fromARGB(255, 25, 118, 210),
+                                        size: 16),
                                     const SizedBox(width: 8),
                                     Text(
                                       'Grupo: ${widget.grupoNombre}',
@@ -427,7 +498,8 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
                         ),
                         const SizedBox(height: 16),
                         
-                        _buildCategoriaSelector(categoriasDisponibles),
+                        _buildCategoriaSelector(
+                            categoriasDisponibles, todasLasCats),
                         const SizedBox(height: 16),
                         
                         _buildSubgrupoSelector(subgruposDisponibles),
@@ -448,19 +520,22 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
                 children: [
                   Expanded(
                     child: TextButton(
-                      onPressed: _isLoading ? null : () => Navigator.pop(context),
+                      onPressed:
+                          _isLoading ? null : () => Navigator.pop(context),
                       child: const Text("Cancelar"),
                     ),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: (_isFormValid && !_isLoading) ? _handleSave : null,
+                      onPressed:
+                          (_isFormValid && !_isLoading) ? _handleSave : null,
                       child: _isLoading
                           ? const SizedBox(
                               width: 16,
                               height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                              child:
+                                  CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Text("Crear Caso"),
                     ),
