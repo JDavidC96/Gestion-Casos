@@ -11,6 +11,7 @@ import '../widgets/group_form_dialog.dart';
 import '../widgets/user_card.dart';
 import '../widgets/group_card.dart';
 import '../widgets/assign_empresas_dialog.dart';
+import 'dashboard_screen.dart';
 
 class SuperAdminScreen extends StatefulWidget {
   const SuperAdminScreen({super.key});
@@ -20,7 +21,7 @@ class SuperAdminScreen extends StatefulWidget {
 }
 
 class _SuperAdminScreenState extends State<SuperAdminScreen> {
-  // 0 = Usuarios, 1 = Grupos, 2 = Solicitudes
+  // 0 = Dashboard, 1 = Usuarios, 2 = Grupos, 3 = Solicitudes
   int _selectedIndex = 0;
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
@@ -98,7 +99,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          colors: [Color(0xFF6A11CB), Color(0xFF2575FC)],
+          colors: [Color.fromARGB(255, 49, 45, 49), Color.fromARGB(255, 2, 2, 2)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -106,6 +107,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
       child: IndexedStack(
         index: _selectedIndex,
         children: [
+          const DashboardScreen(),
           _buildUsersTab(),
           _buildGroupsTab(),
           _buildSolicitudesTab(),
@@ -734,6 +736,10 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
           onTap: (index) => setState(() => _selectedIndex = index),
           items: [
             const BottomNavigationBarItem(
+              icon: Icon(Icons.dashboard),
+              label: 'Dashboard',
+            ),
+            const BottomNavigationBarItem(
               icon: Icon(Icons.people),
               label: 'Usuarios',
             ),
@@ -784,13 +790,13 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
   // ─── FAB ──────────────────────────────────────────────────────────────────
 
   Widget _buildFloatingActionButton() {
-    // No FAB en la pestaña de solicitudes
-    if (_selectedIndex == 2) return const SizedBox.shrink();
+    // No FAB en dashboard ni solicitudes
+    if (_selectedIndex == 0 || _selectedIndex == 3) return const SizedBox.shrink();
     return FloatingActionButton(
-      onPressed: _selectedIndex == 0 ? _agregarUsuario : _agregarGrupo,
+      onPressed: _selectedIndex == 1 ? _agregarUsuario : _agregarGrupo,
       backgroundColor: Colors.orange,
       foregroundColor: Colors.white,
-      tooltip: _selectedIndex == 0 ? 'Agregar Usuario' : 'Agregar Grupo',
+      tooltip: _selectedIndex == 1 ? 'Agregar Usuario' : 'Agregar Grupo',
       child: const Icon(Icons.add),
     );
   }

@@ -136,7 +136,18 @@ class PdfService {
     final String ubicacion    = estadoAbierto['ubicacionTexto']         ?? 'N/A';
     final String descHallazgo = estadoAbierto['descripcionHallazgo']    ?? data['descripcionRiesgo'] ?? 'Sin descripción';
     final String control      = estadoAbierto['recomendacionesControl'] ?? 'N/A';
-    final String nombreCliente = estadoAbierto['nombreCliente'] as String? ?? '';
+    final String nombreClienteAbierto = estadoAbierto['nombreCliente'] as String? ?? '';
+
+    // ── Estado Cerrado ──
+    final bool esCerrado = data['cerrado'] == true;
+    final Map<String, dynamic> estadoCerrado = data['estadoCerrado'] as Map<String, dynamic>? ?? {};
+    final String descSolucion = estadoCerrado['descripcionSolucion'] as String? ?? '';
+    final String nombreClienteCerrado = estadoCerrado['nombreCliente'] as String? ?? '';
+
+    DateTime? fechaCierre;
+    if (data['fechaCierre'] is Timestamp) {
+      fechaCierre = (data['fechaCierre'] as Timestamp).toDate();
+    }
 
     // Nombre del inspector: estadoAbierto → data raíz → perfil del usuario en Firestore
     String inspector = _obtenerValor(caso?.usuarioNombre, estadoAbierto['usuarioNombre'])
@@ -152,21 +163,25 @@ class PdfService {
     final String fechaTexto = DateFormat('dd/MM/yyyy').format(fechaC);
     final String horaTexto  = DateFormat('HH:mm:ss').format(fechaC);
 
-    // ── Lanzar todas las descargas en paralelo (mismo patrón que ReportService) ──
-    final fotoFuture         = _cargarImagenHallazgo(estadoAbierto);
-    final logoFuture         = _cargarLogoGrupo(data['grupoId'] as String?);
-    final firmaInspFuture    = _cargarFirmaInspector(data['creadoPor'] as String?);
-    final firmaClienteFuture = _cargarFirmaCliente(estadoAbierto);
+    // ── Lanzar todas las descargas en paralelo ──
+    final fotoFuture              = _cargarImagenHallazgo(estadoAbierto);
+    final logoFuture              = _cargarLogoGrupo(data['grupoId'] as String?);
+    final firmaInspFuture         = _cargarFirmaInspector(data['creadoPor'] as String?);
+    final firmaClienteAbFuture    = _cargarFirmaCliente(estadoAbierto);
+    final fotoCerradoFuture       = esCerrado ? _cargarFotoCerrado(estadoCerrado) : Future.value(null);
+    final firmaClienteCeFuture    = esCerrado ? _cargarFirmaCliente(estadoCerrado) : Future.value(null);
     // Si no hay nombre del inspector, intentar obtenerlo del perfil del usuario
     final inspectorNameFuture = (inspector.isEmpty && data['creadoPor'] != null)
         ? _cargarNombreUsuario(data['creadoPor'] as String)
         : Future.value(null);
 
-    final pw.MemoryImage? imageHallazgo      = await fotoFuture;
-    final pw.MemoryImage? imagenLogo         = await logoFuture;
-    final pw.MemoryImage? imagenFirmaInspector = await firmaInspFuture;
-    final pw.MemoryImage? imagenFirmaCliente = await firmaClienteFuture;
-    final String? inspectorFromProfile       = await inspectorNameFuture;
+    final pw.MemoryImage? imageHallazgo         = await fotoFuture;
+    final pw.MemoryImage? imagenLogo            = await logoFuture;
+    final pw.MemoryImage? imagenFirmaInspector  = await firmaInspFuture;
+    final pw.MemoryImage? imagenFirmaClienteAb  = await firmaClienteAbFuture;
+    final pw.MemoryImage? imagenFotoCerrado     = await fotoCerradoFuture;
+    final pw.MemoryImage? imagenFirmaClienteCe  = await firmaClienteCeFuture;
+    final String? inspectorFromProfile          = await inspectorNameFuture;
     if (inspector.isEmpty && inspectorFromProfile != null) {
       inspector = inspectorFromProfile;
     }
@@ -174,21 +189,46 @@ class PdfService {
 
     if (imageHallazgo == null      && (estadoAbierto['fotoUrl']        as String?) != null) advertencias.add('No se pudo cargar la foto del hallazgo');
     if (imagenFirmaInspector == null && (data['creadoPor']             as String?) != null) advertencias.add('No se pudo cargar la firma del inspector');
-    if (imagenFirmaCliente == null && (estadoAbierto['firmaClienteUrl'] as String?) != null) advertencias.add('No se pudo cargar la firma del cliente');
+    if (imagenFirmaClienteAb == null && (estadoAbierto['firmaClienteUrl'] as String?) != null) advertencias.add('No se pudo cargar la firma del cliente (apertura)');
+    if (imagenFotoCerrado == null && (estadoCerrado['fotoUrl']        as String?) != null) advertencias.add('No se pudo cargar la foto de la solución');
+    if (imagenFirmaClienteCe == null && (estadoCerrado['firmaClienteUrl'] as String?) != null) advertencias.add('No se pudo cargar la firma del cliente (cierre)');
 
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.letter.landscape,
         margin: const pw.EdgeInsets.all(20),
-        build: (pw.Context context) => [
-          _buildHeader(imagenLogo),
-          _tituloSeccion("1. Información General"),
-          _buildInfoTable(empresa, fechaTexto, horaTexto, centro, inspector),
-          _tituloSeccion("2. Detalle del Hallazgo"),
-          _buildDataTable(nombreCaso, categoria, tipoEspecifico, ubicacion, descHallazgo, nivelRiesgo, control, imageHallazgo),
-          pw.SizedBox(height: 20),
-          _buildFirmas(inspector, nombreCliente, imagenFirmaInspector, imagenFirmaCliente),
-        ],
+        build: (pw.Context context) {
+          final widgets = <pw.Widget>[
+            _buildHeader(imagenLogo),
+            _tituloSeccion("1. Información General"),
+            _buildInfoTable(empresa, fechaTexto, horaTexto, centro, inspector),
+            _tituloSeccion("2. Hallazgo (Estado Abierto)"),
+            _buildDataTable(nombreCaso, categoria, tipoEspecifico, ubicacion, descHallazgo, nivelRiesgo, control, imageHallazgo),
+          ];
+
+          // ── Sección 3: Estado Cerrado (solo si el caso está cerrado) ──
+          if (esCerrado && descSolucion.isNotEmpty) {
+            final fechaCierreTexto = fechaCierre != null
+                ? DateFormat('dd/MM/yyyy HH:mm').format(fechaCierre)
+                : 'N/A';
+            widgets.add(pw.SizedBox(height: 10));
+            widgets.add(_tituloSeccion("3. Solución (Estado Cerrado)"));
+            widgets.add(_buildEstadoCerradoTable(descSolucion, fechaCierreTexto, imagenFotoCerrado));
+          }
+
+          // ── Firmas ──
+          widgets.add(pw.SizedBox(height: 14));
+          widgets.add(_tituloSeccion(esCerrado ? "Firmas — Apertura" : "Firmas"));
+          widgets.add(_buildFirmas(inspector, nombreClienteAbierto, imagenFirmaInspector, imagenFirmaClienteAb));
+
+          if (esCerrado) {
+            widgets.add(pw.SizedBox(height: 10));
+            widgets.add(_tituloSeccion("Firmas — Cierre"));
+            widgets.add(_buildFirmas(inspector, nombreClienteCerrado, imagenFirmaInspector, imagenFirmaClienteCe));
+          }
+
+          return widgets;
+        },
       ),
     );
 
@@ -251,15 +291,19 @@ class PdfService {
   }
 
   static Future<pw.MemoryImage?> _cargarFirmaCliente(
-      Map<String, dynamic> estadoAbierto) async {
+      Map<String, dynamic> estado) async {
     final bytes = await _descargarImagen(
-        estadoAbierto['firmaClienteUrl'] as String?);
+        estado['firmaClienteUrl'] as String?);
+    return bytes != null ? pw.MemoryImage(bytes) : null;
+  }
+
+  static Future<pw.MemoryImage?> _cargarFotoCerrado(
+      Map<String, dynamic> estadoCerrado) async {
+    final bytes = await _descargarImagen(estadoCerrado['fotoUrl'] as String?);
     return bytes != null ? pw.MemoryImage(bytes) : null;
   }
 
   /// Obtiene el displayName de un usuario desde Firestore.
-  /// Usado como fallback cuando el inspector (ej. admin) no tiene
-  /// usuarioNombre guardado en estadoAbierto.
   static Future<String?> _cargarNombreUsuario(String uid) async {
     try {
       final doc = await FirebaseFirestore.instance
@@ -357,6 +401,35 @@ class PdfService {
         ],
       ),
     ]
+  );
+
+  // ── Sección Estado Cerrado ─────────────────────────────────────────────
+  static pw.Widget _buildEstadoCerradoTable(String descSolucion, String fechaCierre, pw.MemoryImage? fotoCerrado) => pw.Table(
+    border: pw.TableBorder.all(),
+    columnWidths: {
+      0: const pw.FlexColumnWidth(3),
+      1: const pw.FlexColumnWidth(1),
+      2: const pw.FixedColumnWidth(100),
+    },
+    children: [
+      pw.TableRow(
+        decoration: const pw.BoxDecoration(color: PdfColors.green50),
+        children: [
+          _celdaHeader("Descripción de la Solución"),
+          _celdaHeader("Fecha Cierre"),
+          _celdaHeader("Evidencia Cierre"),
+        ],
+      ),
+      pw.TableRow(
+        children: [
+          _celdaData(descSolucion),
+          _celdaData(fechaCierre),
+          pw.Container(height: 80, child: fotoCerrado != null
+              ? pw.Image(fotoCerrado, fit: pw.BoxFit.contain)
+              : pw.Center(child: pw.Text("Sin foto", style: const pw.TextStyle(fontSize: 6)))),
+        ],
+      ),
+    ],
   );
 
   static pw.Widget _tituloSeccion(String t) => pw.Padding(

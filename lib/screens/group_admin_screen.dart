@@ -121,6 +121,7 @@ class _GroupAdminScreenState extends State<GroupAdminScreen> {
               grupoId: _groupId,
               grupoNombre: _groupName,
               onAddUser: _agregarInspector,
+              filtrarPorGrupo: true,
             ),
           ),
         ],

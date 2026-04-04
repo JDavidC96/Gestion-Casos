@@ -6,7 +6,6 @@ import 'report_screen.dart';
 import '../controllers/case_detail_controller.dart';
 import '../providers/auth_provider.dart';
 import '../providers/interface_config_provider.dart';
-import '../providers/connectivity_provider.dart';
 import '../services/offline_case_service.dart';
 import '../services/sync_service.dart';
 import 'dart:async';

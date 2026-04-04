@@ -112,10 +112,14 @@ class ReportService {
     final imagenesFuture = Future.wait(
       casosFiltrados.map((doc) => _cargarImagenCaso(doc)),
     );
+    final imagenesCerradoFuture = Future.wait(
+      casosFiltrados.map((doc) => _cargarImagenCerrado(doc)),
+    );
     final logoFuture = _cargarLogoGrupo(grupoId);
     final firmasFuture = _cargarFirmasPrimerCaso(casosFiltrados.first);
 
     final imagenes = await imagenesFuture;
+    final imagenesCerrado = await imagenesCerradoFuture;
     final imagenLogo = await logoFuture;
     final firmas = await firmasFuture;
 
@@ -145,6 +149,7 @@ class ReportService {
             widgets.add(pw.SizedBox(height: 3));
             widgets.add(_buildBloqueDesdeDoc(
               casosFiltrados[i], empresaNombre, centroNombre, fecha, imagenes[i],
+              imagenCerrado: imagenesCerrado[i],
             ));
           }
 
@@ -157,8 +162,9 @@ class ReportService {
               _val(primerEstado['usuarioNombre']) ??
               _val(primerData['usuarioNombre']) ??
               'Inspector';
+          final nombreClienteAbierto = _val(primerEstado['nombreCliente']) ?? '';
           widgets.add(pw.SizedBox(height: 16));
-          widgets.add(_buildFirmas(nombreInspector, centroNombre ?? empresaNombre,
+          widgets.add(_buildFirmas(nombreInspector, nombreClienteAbierto,
               firmas.inspector, firmas.cliente));
 
           return widgets;
@@ -217,6 +223,20 @@ class ReportService {
     final data = doc.data() as Map<String, dynamic>;
     final estadoAbierto = data['estadoAbierto'] as Map<String, dynamic>? ?? {};
     final fotoUrl = _convertirUrlDrive(estadoAbierto['fotoUrl'] as String?);
+    if (fotoUrl == null) return null;
+    try {
+      final response = await http.get(Uri.parse(fotoUrl))
+          .timeout(const Duration(seconds: 15));
+      if (response.statusCode == 200) return pw.MemoryImage(response.bodyBytes);
+    } catch (_) {}
+    return null;
+  }
+
+  static Future<pw.MemoryImage?> _cargarImagenCerrado(QueryDocumentSnapshot doc) async {
+    final data = doc.data() as Map<String, dynamic>;
+    if (data['cerrado'] != true) return null;
+    final estadoCerrado = data['estadoCerrado'] as Map<String, dynamic>? ?? {};
+    final fotoUrl = _convertirUrlDrive(estadoCerrado['fotoUrl'] as String?);
     if (fotoUrl == null) return null;
     try {
       final response = await http.get(Uri.parse(fotoUrl))
@@ -286,16 +306,25 @@ class ReportService {
     String empresaNombreFallback,
     String? centroNombreFallback,
     DateTime fechaFallback,
-    pw.MemoryImage? imagen,
-  ) {
+    pw.MemoryImage? imagen, {
+    pw.MemoryImage? imagenCerrado,
+  }) {
     final data = doc.data() as Map<String, dynamic>;
     final estadoAbierto = data['estadoAbierto'] as Map<String, dynamic>? ?? {};
+    final estadoCerrado = data['estadoCerrado'] as Map<String, dynamic>? ?? {};
+    final esCerrado = data['cerrado'] == true;
 
     DateTime fechaC;
     if (data['fechaCreacion'] is Timestamp) {
       fechaC = (data['fechaCreacion'] as Timestamp).toDate();
     } else {
       fechaC = fechaFallback;
+    }
+
+    String? fechaCierreTexto;
+    if (esCerrado && data['fechaCierre'] is Timestamp) {
+      fechaCierreTexto = DateFormat('dd/MM/yyyy HH:mm').format(
+          (data['fechaCierre'] as Timestamp).toDate());
     }
 
     return _buildBloqueInspeccion(
@@ -311,8 +340,12 @@ class ReportService {
       desc:           _val(estadoAbierto['descripcionHallazgo']) ?? _val(data['descripcionRiesgo']) ?? 'Sin descripción',
       nivel:          _val(estadoAbierto['nivelPeligro']) ?? _val(data['nivelPeligro']) ?? 'N/A',
       control:        _val(estadoAbierto['recomendacionesControl']) ?? 'N/A',
-      estado:         data['cerrado'] == true ? 'Completado' : 'Pendiente',
+      estado:         esCerrado ? 'Completado' : 'Pendiente',
       imagen:         imagen,
+      // Estado cerrado
+      descSolucion:      esCerrado ? _val(estadoCerrado['descripcionSolucion']) : null,
+      fechaCierreTexto:  fechaCierreTexto,
+      imagenCerrado:     imagenCerrado,
     );
   }
 
@@ -331,6 +364,10 @@ class ReportService {
     required String control,
     required String estado,
     pw.MemoryImage? imagen,
+    // Estado cerrado (opcionales)
+    String? descSolucion,
+    String? fechaCierreTexto,
+    pw.MemoryImage? imagenCerrado,
   }) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -345,7 +382,7 @@ class ReportService {
           ],
         ),
         pw.SizedBox(height: 4),
-        _tituloSeccion('2. Detalle del Hallazgo'),
+        _tituloSeccion('2. Hallazgo (Estado Abierto)'),
         pw.Table(
           border: pw.TableBorder.all(width: 0.5),
           columnWidths: {
@@ -375,6 +412,39 @@ class ReportService {
             ]),
           ],
         ),
+        // ── Estado Cerrado (solo si hay datos de solución) ──
+        if (descSolucion != null && descSolucion.isNotEmpty) ...[
+          pw.SizedBox(height: 6),
+          _tituloSeccion('3. Solución (Estado Cerrado)'),
+          pw.Table(
+            border: pw.TableBorder.all(width: 0.5),
+            columnWidths: {
+              0: const pw.FlexColumnWidth(3),
+              1: const pw.FlexColumnWidth(1),
+              2: const pw.FixedColumnWidth(90),
+            },
+            children: [
+              pw.TableRow(
+                decoration: const pw.BoxDecoration(color: PdfColors.green50),
+                children: [
+                  _celdaHeaderLocal('Descripción Solución'),
+                  _celdaHeaderLocal('Fecha Cierre'),
+                  _celdaHeaderLocal('Evidencia Cierre'),
+                ],
+              ),
+              pw.TableRow(children: [
+                _celdaDataLocal(descSolucion),
+                _celdaDataLocal(fechaCierreTexto ?? 'N/A'),
+                pw.Container(
+                  height: 70,
+                  child: imagenCerrado != null
+                      ? pw.Image(imagenCerrado, fit: pw.BoxFit.contain)
+                      : pw.Center(child: pw.Text('Sin foto', style: const pw.TextStyle(fontSize: 6))),
+                ),
+              ]),
+            ],
+          ),
+        ],
       ],
     );
   }
@@ -489,19 +559,21 @@ class ReportService {
   static pw.Widget _buildTablaCentros(
     Map<String, List<QueryDocumentSnapshot>> casosPorCentro, int mes, int anio,
   ) {
-    const double fs = 6.0;
+    const double fs = 5.5;
 
     return pw.Table(
       border: pw.TableBorder.all(width: 0.5),
       columnWidths: {
-        0: const pw.FixedColumnWidth(46),
-        1: const pw.FlexColumnWidth(2.2),
-        2: const pw.FixedColumnWidth(44),
-        3: const pw.FlexColumnWidth(1.8),
-        4: const pw.FlexColumnWidth(3.2),
-        5: const pw.FixedColumnWidth(34),
-        6: const pw.FlexColumnWidth(3.0),
-        7: const pw.FixedColumnWidth(38),
+        0: const pw.FixedColumnWidth(40),   // FECHA
+        1: const pw.FlexColumnWidth(1.8),   // INSPECTOR
+        2: const pw.FixedColumnWidth(40),   // CENTRO
+        3: const pw.FlexColumnWidth(1.5),   // UBICACIÓN
+        4: const pw.FlexColumnWidth(2.5),   // HALLAZGO
+        5: const pw.FixedColumnWidth(30),   // NIVEL
+        6: const pw.FlexColumnWidth(2.2),   // CONTROL
+        7: const pw.FlexColumnWidth(2.2),   // SOLUCIÓN
+        8: const pw.FixedColumnWidth(38),   // FECHA CIERRE
+        9: const pw.FixedColumnWidth(36),   // ESTADO
       },
       children: [
         pw.TableRow(
@@ -514,7 +586,9 @@ class ReportService {
             _celdaHeader('DESCRIPCIÓN\nHALLAZGO', fontSize: fs),
             _celdaHeader('NIVEL\nPELIGRO', fontSize: fs),
             _celdaHeader('CONTROL', fontSize: fs),
-            _celdaHeader('ESTADO DEL\nCONTROL', fontSize: fs),
+            _celdaHeader('SOLUCIÓN', fontSize: fs),
+            _celdaHeader('FECHA\nCIERRE', fontSize: fs),
+            _celdaHeader('ESTADO', fontSize: fs),
           ],
         ),
         ...casosPorCentro.entries.expand((entry) {
@@ -522,17 +596,26 @@ class ReportService {
           return entry.value.map((doc) {
             final data = doc.data() as Map<String, dynamic>;
             final estadoAbierto = data['estadoAbierto'] as Map<String, dynamic>? ?? {};
+            final estadoCerrado = data['estadoCerrado'] as Map<String, dynamic>? ?? {};
             final fecha = (data['fechaCreacion'] as Timestamp?)?.toDate() ?? DateTime.now();
             final esCerrado = data['cerrado'] == true;
 
+            String fechaCierreStr = '';
+            if (esCerrado && data['fechaCierre'] is Timestamp) {
+              fechaCierreStr = DateFormat('dd/MM/yy\nHH:mm').format(
+                  (data['fechaCierre'] as Timestamp).toDate());
+            }
+
             return pw.TableRow(children: [
               _celdaData(DateFormat('dd/MM/yy\nHH:mm').format(fecha), fontSize: fs),
-              _celdaData(estadoAbierto['usuarioNombre'] ?? data['usuarioNombre'] ?? 'N/A', fontSize: fs, maxLength: 28),
-              _celdaData(centroNombre, fontSize: fs, maxLength: 20),
-              _celdaData(estadoAbierto['ubicacionTexto'] ?? 'N/A', fontSize: fs, maxLength: 25),
-              _celdaData(estadoAbierto['descripcionHallazgo'] ?? data['descripcionRiesgo'] ?? 'Sin hallazgos', fontSize: fs, maxLength: 80),
-              _celdaData(estadoAbierto['nivelPeligro'] ?? data['nivelPeligro'] ?? 'N/A', fontSize: fs, maxLength: 12),
-              _celdaData(estadoAbierto['recomendacionesControl'] ?? 'No Aplica', fontSize: fs, maxLength: 70),
+              _celdaData(estadoAbierto['usuarioNombre'] ?? data['usuarioNombre'] ?? 'N/A', fontSize: fs, maxLength: 24),
+              _celdaData(centroNombre, fontSize: fs, maxLength: 18),
+              _celdaData(estadoAbierto['ubicacionTexto'] ?? 'N/A', fontSize: fs, maxLength: 22),
+              _celdaData(estadoAbierto['descripcionHallazgo'] ?? data['descripcionRiesgo'] ?? 'Sin hallazgos', fontSize: fs, maxLength: 60),
+              _celdaData(estadoAbierto['nivelPeligro'] ?? data['nivelPeligro'] ?? 'N/A', fontSize: fs, maxLength: 10),
+              _celdaData(estadoAbierto['recomendacionesControl'] ?? 'No Aplica', fontSize: fs, maxLength: 55),
+              _celdaData(esCerrado ? (estadoCerrado['descripcionSolucion'] ?? 'Sin detalle') : '-', fontSize: fs, maxLength: 55),
+              _celdaData(fechaCierreStr.isEmpty ? '-' : fechaCierreStr, fontSize: fs),
               _celdaData(esCerrado ? 'Completado' : 'Pendiente', fontSize: fs),
             ]);
           });
@@ -573,7 +656,15 @@ class ReportService {
 
   static pw.Widget _buildResumenMensual(Map<String, List<QueryDocumentSnapshot>> casosPorCentro) {
     int totalCasos = 0;
-    casosPorCentro.forEach((_, casos) => totalCasos += casos.length);
+    int totalCerrados = 0;
+    casosPorCentro.forEach((_, casos) {
+      totalCasos += casos.length;
+      totalCerrados += casos.where((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        return data['cerrado'] == true;
+      }).length;
+    });
+    final totalAbiertos = totalCasos - totalCerrados;
 
     return pw.Container(
       margin: const pw.EdgeInsets.only(top: 20),
@@ -588,10 +679,15 @@ class ReportService {
           pw.Text('RESUMEN MENSUAL', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
           pw.SizedBox(height: 5),
           pw.Text('Total centros: ${casosPorCentro.length}'),
-          pw.Text('Total casos: $totalCasos'),
-          ...casosPorCentro.entries.map((e) =>
-            pw.Text('${e.key}: ${e.value.length} casos')
-          ),
+          pw.Text('Total casos: $totalCasos  (Pendientes: $totalAbiertos · Completados: $totalCerrados)'),
+          ...casosPorCentro.entries.map((e) {
+            final cerradosCentro = e.value.where((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              return data['cerrado'] == true;
+            }).length;
+            final abiertosCentro = e.value.length - cerradosCentro;
+            return pw.Text('${e.key}: ${e.value.length} casos ($abiertosCentro pend. / $cerradosCentro comp.)');
+          }),
         ],
       ),
     );
@@ -599,7 +695,7 @@ class ReportService {
 
   // ─── Firmas ──────────────────────────────────────────────────────────────
 
-  static pw.Widget _buildFirmas(String inspectorNombre, String centroNombre,
+  static pw.Widget _buildFirmas(String inspectorNombre, String nombreCliente,
       [pw.MemoryImage? firmaInspector, pw.MemoryImage? firmaCliente]) =>
       pw.Table(
     border: pw.TableBorder.all(width: 0.5),
@@ -645,7 +741,7 @@ class ReportService {
         ),
         pw.Padding(
           padding: const pw.EdgeInsets.all(4),
-          child: pw.Text(centroNombre, style: const pw.TextStyle(fontSize: 8),
+          child: pw.Text(nombreCliente, style: const pw.TextStyle(fontSize: 8),
               textAlign: pw.TextAlign.center),
         ),
       ]),

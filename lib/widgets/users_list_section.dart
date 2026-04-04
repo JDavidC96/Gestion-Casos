@@ -13,13 +13,23 @@ class UsersListSection extends StatelessWidget {
   final String grupoId;
   final String? grupoNombre;
   final VoidCallback? onAddUser;
+
+  /// Cuando es true, siempre filtra por grupoId sin importar el rol.
+  /// Usar desde GroupAdminScreen para que el SuperAdmin vea solo
+  /// los usuarios del grupo seleccionado, no todos los del sistema.
+  final bool filtrarPorGrupo;
   
   const UsersListSection({
     super.key,
     required this.grupoId,
     required this.grupoNombre,
     this.onAddUser,
+    this.filtrarPorGrupo = false,
   });
+
+  /// true = vista global (todos los usuarios). false = filtrado por grupo.
+  bool _esVistaGlobal(AuthProvider auth) =>
+      auth.isSuperAdmin && !filtrarPorGrupo;
   
   @override
   Widget build(BuildContext context) {
@@ -44,14 +54,15 @@ class UsersListSection extends StatelessWidget {
   }
   
   Widget _buildGroupInfo(BuildContext context, AuthProvider authProvider) {
+    final global = _esVistaGlobal(authProvider);
     return StreamBuilder<int>(
-      stream: authProvider.isSuperAdmin 
+      stream: global
           ? _getTotalUsersCount() 
           : AdminService.getInspectorCount(grupoId),
       builder: (context, snapshot) {
         final userCount = snapshot.data ?? 0;
-        final title = authProvider.isSuperAdmin ? 'Todos los Usuarios del Sistema' : 'Inspectores del Grupo';
-        final subtitle = authProvider.isSuperAdmin ? 'Vista de Super Administrador' : grupoNombre ?? 'Sin nombre';
+        final title = global ? 'Todos los Usuarios del Sistema' : 'Usuarios del Grupo';
+        final subtitle = global ? 'Vista de Super Administrador' : grupoNombre ?? 'Sin nombre';
         
         return Container(
           width: double.infinity,
@@ -64,7 +75,7 @@ class UsersListSection extends StatelessWidget {
           child: Row(
             children: [
               Icon(
-                authProvider.isSuperAdmin ? Icons.supervised_user_circle : Icons.group, 
+                global ? Icons.supervised_user_circle : Icons.group, 
                 color: Colors.white70
               ),
               const SizedBox(width: 12),
@@ -95,7 +106,7 @@ class UsersListSection extends StatelessWidget {
                   '$userCount ${_getUserLabel(userCount, authProvider)}',
                   style: const TextStyle(fontSize: 12, color: Colors.white),
                 ),
-                backgroundColor: authProvider.isSuperAdmin ? Colors.purple : Colors.orange,
+                backgroundColor: global ? Colors.purple : Colors.orange,
               ),
             ],
           ),
@@ -117,10 +128,11 @@ class UsersListSection extends StatelessWidget {
   }
   
   Widget _buildUsersList(AuthProvider authProvider, EmpresasProvider empresasProvider) {
+    final global = _esVistaGlobal(authProvider);
     return StreamBuilder<QuerySnapshot>(
-      stream: authProvider.isSuperAdmin 
+      stream: global
           ? UserService.getUsersStream() 
-          : UserService.getInspectoresByGroupStream(grupoId),
+          : UserService.getUsersByGroupStream(grupoId),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return _buildErrorState('Error: ${snapshot.error}');
@@ -134,19 +146,17 @@ class UsersListSection extends StatelessWidget {
           return _buildEmptyState(authProvider);
         }
 
-        // Filtrar usuarios según permisos
+        // Filtrar usuarios según contexto
         final usuariosFiltrados = snapshot.data!.docs.where((doc) {
           final data = doc.data() as Map<String, dynamic>;
           
-          if (authProvider.isSuperAdmin) {
-            // Super admin ve todos excepto a sí mismo
+          if (global) {
+            // Vista global (SuperAdmin en su pantalla): todos excepto a sí mismo
             return data['uid'] != authProvider.user?.uid;
           } else {
-            // Admin ve solo inspectores de su grupo
-            final userRole = data['role'] as String?;
+            // Vista de grupo: todos los usuarios del grupo
             final userGrupoId = data['grupoId'] as String?;
-            return (userRole == 'inspector' || userRole == 'superinspector') && 
-                   userGrupoId == grupoId;
+            return userGrupoId == grupoId;
           }
         }).toList();
 
@@ -191,39 +201,10 @@ class UsersListSection extends StatelessWidget {
   }
   
   Widget _buildEmptyState(AuthProvider authProvider) {
-    final icon = authProvider.isSuperAdmin ? Icons.people_outline : Icons.people_outline;
-    final message = authProvider.isSuperAdmin 
+    final global = _esVistaGlobal(authProvider);
+    final message = global
         ? 'No hay usuarios en el sistema' 
-        : 'No hay inspectores en tu grupo';
-    
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 80, color: Colors.white70),
-          const SizedBox(height: 16),
-          Text(
-            message,
-            style: const TextStyle(fontSize: 18, color: Colors.white70),
-            textAlign: TextAlign.center,
-          ),
-          if (!authProvider.isSuperAdmin) ...[
-            const SizedBox(height: 8),
-            Text(
-              'Grupo: $grupoNombre',
-              style: const TextStyle(fontSize: 16, color: Colors.white70),
-            ),
-          ],
-
-        ],
-      ),
-    );
-  }
-  
-  Widget _buildNoUsersState(AuthProvider authProvider) {
-    final message = authProvider.isSuperAdmin 
-        ? 'No hay usuarios que mostrar' 
-        : 'No hay inspectores normales en tu grupo';
+        : 'No hay usuarios en este grupo';
     
     return Center(
       child: Column(
@@ -236,14 +217,42 @@ class UsersListSection extends StatelessWidget {
             style: const TextStyle(fontSize: 18, color: Colors.white70),
             textAlign: TextAlign.center,
           ),
-          if (!authProvider.isSuperAdmin) ...[
+          if (!global) ...[
             const SizedBox(height: 8),
             Text(
               'Grupo: $grupoNombre',
               style: const TextStyle(fontSize: 16, color: Colors.white70),
             ),
           ],
-
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildNoUsersState(AuthProvider authProvider) {
+    final global = _esVistaGlobal(authProvider);
+    final message = global
+        ? 'No hay usuarios que mostrar' 
+        : 'No hay usuarios en este grupo';
+    
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.people_outline, size: 80, color: Colors.white70),
+          const SizedBox(height: 16),
+          Text(
+            message,
+            style: const TextStyle(fontSize: 18, color: Colors.white70),
+            textAlign: TextAlign.center,
+          ),
+          if (!global) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Grupo: $grupoNombre',
+              style: const TextStyle(fontSize: 16, color: Colors.white70),
+            ),
+          ],
         ],
       ),
     );
