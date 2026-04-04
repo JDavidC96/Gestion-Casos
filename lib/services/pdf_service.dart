@@ -23,6 +23,22 @@ class PdfService {
   ///  • Para cualquier URL, reintenta hasta [reintentos] veces con back-off.
   ///  • Valida que la respuesta sea realmente una imagen (Content-Type image/*).
   ///  • Detecta y maneja la página de confirmación de virus-scan de Drive.
+  /// Verifica si los bytes corresponden a una imagen real (PNG o JPEG)
+  /// inspeccionando los magic bytes del archivo.
+  static bool _esImagenValida(Uint8List bytes) {
+    if (bytes.length < 4) return false;
+    // JPEG: empieza con FF D8 FF
+    if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) return true;
+    // PNG: empieza con 89 50 4E 47
+    if (bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) return true;
+    // GIF: empieza con 47 49 46
+    if (bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46) return true;
+    // WebP: empieza con 52 49 46 46 ... 57 45 42 50
+    if (bytes.length > 12 && bytes[0] == 0x52 && bytes[1] == 0x49 &&
+        bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50) return true;
+    return false;
+  }
+
   static Future<Uint8List?> _descargarImagen(String? rawUrl,
       {int reintentos = 3}) async {
     if (rawUrl == null || rawUrl.isEmpty) return null;
@@ -53,8 +69,16 @@ class PdfService {
 
           final contentType = response.headers['content-type'] ?? '';
 
-          // ✅ Respuesta es una imagen — éxito
+          // ✅ Respuesta es una imagen por Content-Type — éxito
           if (contentType.startsWith('image/')) {
+            return response.bodyBytes;
+          }
+
+          // ✅ Drive a veces devuelve application/octet-stream para
+          //    archivos recién subidos. Si los bytes son realmente
+          //    una imagen (magic bytes), aceptarlos.
+          if (contentType.contains('application/octet-stream') &&
+              _esImagenValida(response.bodyBytes)) {
             return response.bodyBytes;
           }
 
@@ -72,10 +96,12 @@ class PdfService {
               final confirmResp = await http
                   .get(Uri.parse(confirmUrl))
                   .timeout(const Duration(seconds: 25));
-              if (confirmResp.statusCode == 200 &&
-                  (confirmResp.headers['content-type'] ?? '')
-                      .startsWith('image/')) {
-                return confirmResp.bodyBytes;
+              if (confirmResp.statusCode == 200) {
+                final confirmCt = confirmResp.headers['content-type'] ?? '';
+                if (confirmCt.startsWith('image/') ||
+                    _esImagenValida(confirmResp.bodyBytes)) {
+                  return confirmResp.bodyBytes;
+                }
               }
             }
           }
@@ -107,10 +133,15 @@ class PdfService {
     final Map<String, dynamic> estadoAbierto = data['estadoAbierto'] as Map<String, dynamic>? ?? {};
 
     final String nivelRiesgo  = _obtenerValor(caso?.nivelPeligro,   estadoAbierto['nivelPeligro'])   ?? data['nivelPeligro']   ?? 'N/A';
-    final String inspector    = _obtenerValor(caso?.usuarioNombre,  estadoAbierto['usuarioNombre'])  ?? data['usuarioNombre']  ?? 'N/A';
     final String ubicacion    = estadoAbierto['ubicacionTexto']         ?? 'N/A';
     final String descHallazgo = estadoAbierto['descripcionHallazgo']    ?? data['descripcionRiesgo'] ?? 'Sin descripción';
     final String control      = estadoAbierto['recomendacionesControl'] ?? 'N/A';
+    final String nombreCliente = estadoAbierto['nombreCliente'] as String? ?? '';
+
+    // Nombre del inspector: estadoAbierto → data raíz → perfil del usuario en Firestore
+    String inspector = _obtenerValor(caso?.usuarioNombre, estadoAbierto['usuarioNombre'])
+        ?? data['usuarioNombre'] as String?
+        ?? '';
 
     DateTime fechaC;
     if (data['fechaCreacion'] is Timestamp) {
@@ -126,11 +157,20 @@ class PdfService {
     final logoFuture         = _cargarLogoGrupo(data['grupoId'] as String?);
     final firmaInspFuture    = _cargarFirmaInspector(data['creadoPor'] as String?);
     final firmaClienteFuture = _cargarFirmaCliente(estadoAbierto);
+    // Si no hay nombre del inspector, intentar obtenerlo del perfil del usuario
+    final inspectorNameFuture = (inspector.isEmpty && data['creadoPor'] != null)
+        ? _cargarNombreUsuario(data['creadoPor'] as String)
+        : Future.value(null);
 
     final pw.MemoryImage? imageHallazgo      = await fotoFuture;
     final pw.MemoryImage? imagenLogo         = await logoFuture;
     final pw.MemoryImage? imagenFirmaInspector = await firmaInspFuture;
     final pw.MemoryImage? imagenFirmaCliente = await firmaClienteFuture;
+    final String? inspectorFromProfile       = await inspectorNameFuture;
+    if (inspector.isEmpty && inspectorFromProfile != null) {
+      inspector = inspectorFromProfile;
+    }
+    if (inspector.isEmpty) inspector = 'N/A';
 
     if (imageHallazgo == null      && (estadoAbierto['fotoUrl']        as String?) != null) advertencias.add('No se pudo cargar la foto del hallazgo');
     if (imagenFirmaInspector == null && (data['creadoPor']             as String?) != null) advertencias.add('No se pudo cargar la firma del inspector');
@@ -147,7 +187,7 @@ class PdfService {
           _tituloSeccion("2. Detalle del Hallazgo"),
           _buildDataTable(nombreCaso, categoria, tipoEspecifico, ubicacion, descHallazgo, nivelRiesgo, control, imageHallazgo),
           pw.SizedBox(height: 20),
-          _buildFirmas(inspector, centro, imagenFirmaInspector, imagenFirmaCliente),
+          _buildFirmas(inspector, nombreCliente, imagenFirmaInspector, imagenFirmaCliente),
         ],
       ),
     );
@@ -215,6 +255,19 @@ class PdfService {
     final bytes = await _descargarImagen(
         estadoAbierto['firmaClienteUrl'] as String?);
     return bytes != null ? pw.MemoryImage(bytes) : null;
+  }
+
+  /// Obtiene el displayName de un usuario desde Firestore.
+  /// Usado como fallback cuando el inspector (ej. admin) no tiene
+  /// usuarioNombre guardado en estadoAbierto.
+  static Future<String?> _cargarNombreUsuario(String uid) async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users').doc(uid).get();
+      return doc.data()?['displayName'] as String?;
+    } catch (_) {
+      return null;
+    }
   }
 
   static String? _obtenerValor(String? objetoVal, dynamic mapaVal) {

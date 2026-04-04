@@ -16,6 +16,10 @@ import '../widgets/closed_cases_header.dart';
 import '../widgets/closed_cases_button.dart';
 import '../widgets/configurable_feature.dart';
 import '../services/report_service.dart';
+import '../services/offline_case_service.dart';
+import '../services/sync_service.dart';
+import '../providers/connectivity_provider.dart';
+import 'dart:async';
 
 class CaseListScreen extends StatefulWidget {
   const CaseListScreen({super.key});
@@ -39,9 +43,36 @@ class _CaseListScreenState extends State<CaseListScreen> {
   IconData? _empresaIcon;
   bool _isInitialized = false;
 
+  // Suscripciones a streams offline — se cancelan en dispose
+  StreamSubscription? _syncSub;
+  StreamSubscription? _offlineSub;
+
   @override
   void initState() {
     super.initState();
+    _syncSub = SyncService.instance.onSyncDone.listen((_) {
+      if (mounted) setState(() {});
+    });
+    _offlineSub = OfflineCaseService.instance.casesStream.listen((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _syncSub?.cancel();
+    _offlineSub?.cancel();
+    super.dispose();
+  }
+
+  /// Lee directamente de Hive en cada build — siempre reactivo.
+  List<Map<String, dynamic>> get _casosOffline {
+    if (_empresaId == 'empresa_default' || _empresaId.isEmpty) return [];
+    return OfflineCaseService.instance.getPending().where((c) {
+      final matchEmpresa = c['empresaId'] == _empresaId;
+      final matchCentro = _centroId == null || c['centroId'] == _centroId;
+      return matchEmpresa && matchCentro;
+    }).toList();
   }
 
   // didChangeDependencies se ejecuta antes del primer build y tiene acceso
@@ -544,6 +575,7 @@ void _mostrarDialogoReporteDiario() {
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
     final configProvider = Provider.of<InterfaceConfigProvider>(context);
+    final connectivityProvider = Provider.of<ConnectivityProvider>(context);
 
     // Mientras los argumentos no estén listos, mostrar loading en lugar de
     // lanzar un query de Firestore con path vacío.
@@ -569,6 +601,63 @@ void _mostrarDialogoReporteDiario() {
             ),
           ],
         ),
+        bottom: !connectivityProvider.isOnline
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(28),
+                child: Container(
+                  width: double.infinity,
+                  color: Colors.orange.shade700,
+                  padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 12),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.cloud_off, size: 14, color: Colors.white),
+                      const SizedBox(width: 6),
+                      const Text(
+                        'Sin conexión — mostrando datos locales',
+                        style: TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w500),
+                      ),
+                      if (connectivityProvider.hasPending) ...[
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: Colors.white24,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '${connectivityProvider.pendingCount} pendiente${connectivityProvider.pendingCount != 1 ? 's' : ''}',
+                            style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              )
+            : connectivityProvider.hasPending
+                ? PreferredSize(
+                    preferredSize: const Size.fromHeight(28),
+                    child: Container(
+                      width: double.infinity,
+                      color: Colors.blue.shade600,
+                      padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 12),
+                      child: Row(
+                        children: [
+                          const SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Sincronizando ${connectivityProvider.pendingCount} caso${connectivityProvider.pendingCount != 1 ? 's' : ''}...',
+                            style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w500),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : null,
         actions: [
           IconButton(onPressed: _mostrarDialogoReporteDiario,
            icon: const Icon(Icons.picture_as_pdf),
@@ -645,8 +734,88 @@ void _mostrarDialogoReporteDiario() {
           ),
         ),
         child: StreamBuilder<QuerySnapshot>(
-          stream: FirebaseService.getCasosPorEmpresaStream(_grupoId, _empresaId, _centroId ?? ''),
+          stream: connectivityProvider.isOnline
+              ? FirebaseService.getCasosPorEmpresaStream(_grupoId, _empresaId, _centroId ?? '')
+              : const Stream.empty(),
           builder: (context, snapshot) {
+
+            // ── Guardar caché cada vez que llegan datos frescos de Firestore ─
+            if (connectivityProvider.isOnline &&
+                snapshot.hasData &&
+                snapshot.connectionState == ConnectionState.active) {
+              final cacheKey = '${_grupoId}_${_empresaId}_${_centroId ?? ""}';
+              final casosParaCache = snapshot.data!.docs
+                  .where((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    return authProvider.puedeAccederRecurso(data['grupoId']) &&
+                        data['cerrado'] != true;
+                  })
+                  .map((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    return {...data, 'id': doc.id};
+                  })
+                  .toList();
+              OfflineCaseService.instance
+                  .saveFirestoreCache(cacheKey, casosParaCache);
+            }
+
+            // ── Sin red: offline pendientes + caché Firestore ─────────────
+            if (!connectivityProvider.isOnline) {
+              final cacheKey = '${_grupoId}_${_empresaId}_${_centroId ?? ""}';
+              final cachedCasos =
+                  OfflineCaseService.instance.getFirestoreCache(cacheKey);
+
+              final totalItems = _casosOffline.length + cachedCasos.length;
+
+              if (totalItems == 0) {
+                return EmptyCasesState(
+                  empresaIcon: _empresaIcon ?? Icons.business,
+                  empresaNombre: _empresa.nombre,
+                  centroNombre: _centroNombre,
+                  casosCerradosCount: 0,
+                  onAddCase: _openAddCaseModal,
+                  onViewClosedCases: () => _navegarACasosCerrados([]),
+                  puedeAgregar: _puedeCrearCasos(authProvider),
+                );
+              }
+              return ListView.builder(
+                itemCount: totalItems,
+                itemBuilder: (context, index) {
+                  // Primero los offline pendientes
+                  if (index < _casosOffline.length) {
+                    return _buildOfflineCaseCard(_casosOffline[index]);
+                  }
+                  // Luego los cacheados de Firestore (solo lectura)
+                  final cachedIndex = index - _casosOffline.length;
+                  final data = cachedCasos[cachedIndex];
+                  final casoId = data['id'] as String? ?? '';
+                  final caso = Case(
+                    id: casoId,
+                    empresaId: data['empresaId'] ?? '',
+                    empresaNombre: data['empresaNombre'] ?? '',
+                    nombre: data['nombre'] ?? '',
+                    tipoRiesgo: data['tipoRiesgo'] ?? '',
+                    descripcionRiesgo: data['descripcionRiesgo'] ?? '',
+                    nivelPeligro: _getNivelPeligroActualizado(data),
+                    fechaCreacion: (data['fechaCreacion'] is Timestamp)
+                        ? (data['fechaCreacion'] as Timestamp).toDate()
+                        : DateTime.now(),
+                    cerrado: false,
+                  );
+                  return CaseCard(
+                    caso: caso,
+                    onTap: () => _navegarADetalleCaso(casoId, caso),
+                    mostrarNivelRiesgo:
+                        _debeMostrarNivelRiesgo(caso, configProvider),
+                    nivelRiesgoColor:
+                        _getNivelRiesgoColor(caso, configProvider),
+                    mostrarMenu: false,
+                  );
+                },
+              );
+            }
+
+            // ── Con red: errores y loading ────────────────────────────────
             if (snapshot.hasError) {
               return Center(
                 child: Column(
@@ -707,7 +876,9 @@ void _mostrarDialogoReporteDiario() {
               }
             }
 
-            if (casosAbiertos.isEmpty) {
+            final totalItems = _casosOffline.length + casosAbiertos.length;
+
+            if (totalItems == 0) {
               return EmptyCasesState(
                 empresaIcon: _empresaIcon ?? Icons.business,
                 empresaNombre: _empresa.nombre,
@@ -733,9 +904,15 @@ void _mostrarDialogoReporteDiario() {
                 ),
                 Expanded(
                   child: ListView.builder(
-                    itemCount: casosAbiertos.length,
+                    itemCount: totalItems,
                     itemBuilder: (context, index) {
-                      final doc = casosAbiertos[index];
+                      // Primero los casos offline (al tope de la lista)
+                      if (index < _casosOffline.length) {
+                        return _buildOfflineCaseCard(_casosOffline[index]);
+                      }
+                      // Luego los de Firestore
+                      final firestoreIndex = index - _casosOffline.length;
+                      final doc = casosAbiertos[firestoreIndex];
                       final data = doc.data() as Map<String, dynamic>;
                       final casoId = doc.id;
 
@@ -783,5 +960,150 @@ void _mostrarDialogoReporteDiario() {
               )
             : null,
     );
+  }
+
+  // ─── Tarjeta para casos offline ─────────────────────────────────────────
+
+  Widget _buildOfflineCaseCard(Map<String, dynamic> caso) {
+    final offlineId = caso['offlineId'] as String;
+    final nombre = caso['nombre'] as String? ?? 'Sin nombre';
+    final tipoRiesgo = caso['tipoRiesgo'] as String? ?? '';
+    final creadoAt = caso['creadoAt'] as String?;
+    final fecha = creadoAt != null
+        ? DateTime.tryParse(creadoAt) ?? DateTime.now()
+        : DateTime.now();
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.shade300, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.orange.withOpacity(0.15),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: Colors.orange.shade50,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.orange.shade200),
+          ),
+          child: Icon(Icons.cloud_off, color: Colors.orange.shade600, size: 22),
+        ),
+        title: Text(
+          nombre,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (tipoRiesgo.isNotEmpty)
+              Text(tipoRiesgo, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'Sin sincronizar',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.orange.shade800,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${fecha.day}/${fecha.month}/${fecha.year}',
+                  style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                ),
+              ],
+            ),
+          ],
+        ),
+        onTap: () => _navegarADetalleCasoOffline(offlineId, caso),
+        trailing: IconButton(
+          icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+          tooltip: 'Descartar caso offline',
+          onPressed: () => _confirmarDescartarOffline(offlineId, nombre),
+        ),
+      ),
+    );
+  }
+
+  void _navegarADetalleCasoOffline(String offlineId, Map<String, dynamic> caso) {
+    Navigator.pushNamed(
+      context,
+      '/caseDetail',
+      arguments: {
+        "grupoId":   caso['grupoId'] ?? _grupoId,
+        "empresaId": caso['empresaId'] ?? _empresaId,
+        "centroId":  caso['centroId'] ?? _centroId,
+        "casoId":    offlineId,
+        "caso": Case(
+          id: offlineId,
+          empresaId: caso['empresaId'] ?? _empresaId,
+          empresaNombre: caso['empresaNombre'] ?? _empresa.nombre,
+          nombre: caso['nombre'] ?? '',
+          tipoRiesgo: caso['tipoRiesgo'] ?? '',
+          descripcionRiesgo: '',
+          nivelPeligro: caso['nivelPeligro'] ?? '',
+          fechaCreacion: caso['creadoAt'] != null
+              ? DateTime.tryParse(caso['creadoAt'] as String) ?? DateTime.now()
+              : DateTime.now(),
+          cerrado: false,
+        ),
+        "esOffline": true,
+      },
+    );
+  }
+
+  Future<void> _confirmarDescartarOffline(String offlineId, String nombre) async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orange),
+            SizedBox(width: 8),
+            Text('Descartar caso'),
+          ],
+        ),
+        content: Text(
+          '¿Descartar el caso "$nombre"?\n\nSe eliminará localmente y no se subirá a Firestore.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Descartar', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (confirmar == true) {
+      await OfflineCaseService.instance.deleteCase(offlineId);
+    }
   }
 }

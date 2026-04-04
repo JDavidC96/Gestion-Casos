@@ -87,6 +87,9 @@ class _CaseStateCardFirebaseState extends State<CaseStateCardFirebase> {
       exportBackgroundColor: Colors.white,
     );
     _nombreClienteCtrl = TextEditingController(text: widget.nombreCliente ?? '');
+    // true = el usuario NO ha dibujado en el canvas esta sesión.
+    // Si hay firma de draft, se muestra como preview (no en el canvas).
+    _firmaClienteLimpia = true;
 
     _sigController.addListener(() {
       if (_sigController.isNotEmpty) {
@@ -101,6 +104,19 @@ class _CaseStateCardFirebaseState extends State<CaseStateCardFirebase> {
     _sigController.dispose();
     _nombreClienteCtrl.dispose();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(CaseStateCardFirebase oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Sincronizar el TextEditingController cuando el padre provee un nuevo valor
+    if (widget.nombreCliente != oldWidget.nombreCliente &&
+        widget.nombreCliente != null &&
+        _nombreClienteCtrl.text != widget.nombreCliente) {
+      _nombreClienteCtrl.text = widget.nombreCliente!;
+    }
+    // NO cambiar _firmaClienteLimpia aquí — solo el listener del canvas
+    // debe ponerlo en false (cuando el usuario dibuja).
   }
 
   Future<void> _exportarFirmaCliente() async {
@@ -420,9 +436,12 @@ class _CaseStateCardFirebaseState extends State<CaseStateCardFirebase> {
           ),
           const SizedBox(height: 12),
 
-          // Canvas o preview según estado
+          // Canvas, preview de firma restaurada, o firma guardada
           if (widget.bloqueado && widget.firmaCliente != null)
             _buildFirmaClienteGuardada()
+          else if (!widget.bloqueado && widget.firmaCliente != null && _firmaClienteLimpia)
+            // Firma restaurada desde draft — mostrar preview con opción de re-firmar
+            _buildFirmaClienteRestaurada()
           else if (!widget.bloqueado)
             _buildCanvasFirma(),
         ],
@@ -498,6 +517,52 @@ class _CaseStateCardFirebaseState extends State<CaseStateCardFirebase> {
             borderRadius: BorderRadius.circular(10),
             child: Image.memory(widget.firmaCliente!, fit: BoxFit.contain),
           ),
+        ),
+      ],
+    );
+  }
+
+  /// Muestra la firma restaurada desde el draft con opción de re-firmar.
+  Widget _buildFirmaClienteRestaurada() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text("Firma:",
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+        const SizedBox(height: 6),
+        Container(
+          width: 250,
+          height: 120,
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.green[300]!),
+            borderRadius: BorderRadius.circular(10),
+            color: Colors.white,
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.memory(widget.firmaCliente!, fit: BoxFit.contain),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Text("✓ Firma capturada",
+                style: TextStyle(fontSize: 11, color: Colors.green[700])),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: () {
+                // Limpiar firma restaurada y mostrar canvas vacío
+                setState(() => _firmaClienteLimpia = true);
+                widget.onFirmaClienteChanged?.call(null);
+              },
+              icon: const Icon(Icons.edit, size: 16),
+              label: const Text("Re-firmar", style: TextStyle(fontSize: 12)),
+              style: TextButton.styleFrom(
+                  foregroundColor: Colors.orange[700],
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
+            ),
+          ],
         ),
       ],
     );

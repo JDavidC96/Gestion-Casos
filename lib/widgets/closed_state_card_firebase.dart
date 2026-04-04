@@ -73,6 +73,7 @@ class _ClosedStateCardFirebaseState extends State<ClosedStateCardFirebase> {
       exportBackgroundColor: Colors.white,
     );
     _nombreClienteCtrl = TextEditingController(text: widget.nombreCliente ?? '');
+    _firmaClienteLimpia = true;
 
     _sigController.addListener(() {
       if (_sigController.isNotEmpty) {
@@ -87,6 +88,16 @@ class _ClosedStateCardFirebaseState extends State<ClosedStateCardFirebase> {
     _sigController.dispose();
     _nombreClienteCtrl.dispose();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(ClosedStateCardFirebase oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.nombreCliente != oldWidget.nombreCliente &&
+        widget.nombreCliente != null &&
+        _nombreClienteCtrl.text != widget.nombreCliente) {
+      _nombreClienteCtrl.text = widget.nombreCliente!;
+    }
   }
 
   Future<void> _exportarFirmaCliente() async {
@@ -355,6 +366,8 @@ class _ClosedStateCardFirebaseState extends State<ClosedStateCardFirebase> {
           const SizedBox(height: 12),
           if (widget.bloqueado && widget.firmaCliente != null)
             _buildFirmaClienteGuardada()
+          else if (!widget.bloqueado && widget.firmaCliente != null && _firmaClienteLimpia)
+            _buildFirmaClienteRestaurada()
           else if (!widget.bloqueado)
             _buildCanvasFirma(),
         ],
@@ -430,6 +443,50 @@ class _ClosedStateCardFirebaseState extends State<ClosedStateCardFirebase> {
             borderRadius: BorderRadius.circular(10),
             child: Image.memory(widget.firmaCliente!, fit: BoxFit.contain),
           ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFirmaClienteRestaurada() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text("Firma:",
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+        const SizedBox(height: 6),
+        Container(
+          width: 250,
+          height: 120,
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.green[300]!),
+            borderRadius: BorderRadius.circular(10),
+            color: Colors.white,
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.memory(widget.firmaCliente!, fit: BoxFit.contain),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Text("✓ Firma capturada",
+                style: TextStyle(fontSize: 11, color: Colors.green[700])),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: () {
+                setState(() => _firmaClienteLimpia = true);
+                widget.onFirmaClienteChanged?.call(null);
+              },
+              icon: const Icon(Icons.edit, size: 16),
+              label: const Text("Re-firmar", style: TextStyle(fontSize: 12)),
+              style: TextButton.styleFrom(
+                  foregroundColor: Colors.orange[700],
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
+            ),
+          ],
         ),
       ],
     );

@@ -1,5 +1,6 @@
 // lib/controllers/case_detail_controller.dart
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -8,6 +9,8 @@ import 'package:geolocator/geolocator.dart';
 import '../services/firebase_service.dart';
 import '../services/camera_service.dart';
 import '../services/case_draft_service.dart';
+import '../services/connectivity_service.dart';
+import '../services/offline_case_service.dart';
 
 class CaseDetailController with ChangeNotifier {
 
@@ -84,10 +87,12 @@ class CaseDetailController with ChangeNotifier {
     casoCerrado = data['cerrado'] ?? false;
     _loadEstadoAbierto(data);
     _loadEstadoCerrado(data);
-    notifyListeners(); // ← UI se actualiza aquí con los datos del caso
 
-    // Restaurar borrador (rápido, es local con Hive)
-    await _restoreDraftIfAny();
+    // Restaurar borrador ANTES del primer notifyListeners
+    // para que los widgets reciban valores correctos en initState
+    _restoreDraftIfAny();
+
+    notifyListeners(); // ← UI se actualiza con datos de Firestore + draft
 
     // Firmas desde Drive — en segundo plano, no bloquean la UI
     cargarFirmasDesdeDrive(); // sin await
@@ -173,6 +178,27 @@ class CaseDetailController with ChangeNotifier {
     if (changed) notifyListeners();
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  //  FIRMA DEL CLIENTE — persistencia vía draft (base64)
+  // ═══════════════════════════════════════════════════════════════════
+
+  /// Asigna los bytes de la firma del cliente y guarda el draft inmediatamente.
+  /// Los bytes se persisten como base64 en el draft de Hive — no depende de
+  /// async file I/O, así que no se pierde si el usuario sale rápido.
+  void setFirmaCliente({
+    required bool esAbierto,
+    required Uint8List? bytes,
+  }) {
+    if (esAbierto) {
+      firmaClienteAbierto = bytes;
+    } else {
+      firmaClienteCerrado = bytes;
+    }
+    // Guardar inmediatamente — el base64 va directo al draft
+    _saveDraftNow();
+    notifyListeners();
+  }
+
   static String? _convertirUrlDrive(String? url) {
     if (url == null) return null;
     if (url.contains('drive.google.com')) {
@@ -224,6 +250,17 @@ class CaseDetailController with ChangeNotifier {
         subiendoFotoCerrado = true;
       }
       notifyListeners();
+
+      // Si no hay red, guardar solo la ruta local (se subirá al sincronizar)
+      if (!ConnectivityService.instance.isOnline) {
+        scheduleDraftSave();
+        // Guardar ruta local en el caso offline si corresponde
+        if (casoId != null && casoId!.startsWith('offline_')) {
+          await OfflineCaseService.instance.addLocalPhoto(
+            casoId!, captura.fotoPath, esAbierto: esEstadoAbierto);
+        }
+        return null; // ✅ foto guardada localmente
+      }
 
       // Upload a Drive
       final subida = await CameraService.subirFotoADrive(captura.xFile);
@@ -382,6 +419,11 @@ class CaseDetailController with ChangeNotifier {
     'fotoCerradoUrl': fotoCerradoUrl,
     'nombreClienteAbierto': nombreClienteAbierto,
     'nombreClienteCerrado': nombreClienteCerrado,
+    // Firma bytes como base64 — source of truth, síncrono, no depende de I/O
+    'firmaClienteAbiertoBase64': firmaClienteAbierto != null
+        ? base64Encode(firmaClienteAbierto!) : null,
+    'firmaClienteCerradoBase64': firmaClienteCerrado != null
+        ? base64Encode(firmaClienteCerrado!) : null,
   };
 
   void scheduleDraftSave() {
@@ -392,9 +434,22 @@ class CaseDetailController with ChangeNotifier {
     });
   }
 
-  Future<void> _restoreDraftIfAny() async {
+  /// Guarda el draft SIN debounce — para datos críticos como firmas
+  /// y para el flush final en dispose().
+  void _saveDraftNow() {
+    if (casoId == null) return;
+    _draftDebounce?.cancel();
+    try {
+      CaseDraftService.instance.saveDraft(casoId!, _buildDraft());
+    } catch (_) {}
+  }
+
+  /// Restaura el borrador de forma SÍNCRONA para que los valores estén
+  /// disponibles antes del primer notifyListeners() → el widget recibe
+  /// los datos correctos desde su initState.
+  void _restoreDraftIfAny() {
     if (casoId == null || _draftRestored) return;
-    final draft = await CaseDraftService.instance.getDraft(casoId!);
+    final draft = CaseDraftService.instance.getDraftSync(casoId!);
     _draftRestored = true;
     if (draft == null) return;
     if (!estadoAbiertoGuardado) {
@@ -408,6 +463,13 @@ class CaseDetailController with ChangeNotifier {
         fotoAbiertoUrl  = draft['fotoAbiertoUrl']  ?? fotoAbiertoUrl;
       }
       nombreClienteAbierto = draft['nombreClienteAbierto'] ?? nombreClienteAbierto;
+      // Restaurar firma del cliente desde base64 en el draft
+      final firmaAbBase64 = draft['firmaClienteAbiertoBase64'] as String?;
+      if (firmaAbBase64 != null && firmaClienteAbierto == null) {
+        try {
+          firmaClienteAbierto = base64Decode(firmaAbBase64);
+        } catch (_) {}
+      }
     }
     if (!estadoCerradoGuardado) {
       descripcionSolucion = draft['descripcionSolucion'] ?? descripcionSolucion;
@@ -416,14 +478,63 @@ class CaseDetailController with ChangeNotifier {
         fotoCerradoUrl  = draft['fotoCerradoUrl']  ?? fotoCerradoUrl;
       }
       nombreClienteCerrado = draft['nombreClienteCerrado'] ?? nombreClienteCerrado;
+      // Restaurar firma del cliente desde base64 en el draft
+      final firmaCeBase64 = draft['firmaClienteCerradoBase64'] as String?;
+      if (firmaCeBase64 != null && firmaClienteCerrado == null) {
+        try {
+          firmaClienteCerrado = base64Decode(firmaCeBase64);
+        } catch (_) {}
+      }
     }
+    // NO llamar notifyListeners() aquí — el llamador lo hace después
+  }
+
+  /// Carga los datos de un caso offline desde Hive (sin Firestore).
+  /// Se llama en lugar de loadFromFirestore() cuando el caso tiene
+  /// un ID temporal "offline_xxx".
+  void loadFromLocalData(Map<String, dynamic> data) {
+    casoData = data;
+
+    final estadoAbierto = data['estadoAbierto'] as Map<String, dynamic>?;
+    if (estadoAbierto != null) {
+      descripcionHallazgo     = estadoAbierto['descripcionHallazgo'] as String? ?? '';
+      nivelPeligro            = estadoAbierto['nivelPeligro'] as String? ?? '';
+      recomendacionesControl  = estadoAbierto['recomendacionesControl'] as String?;
+      fotoAbiertoUrl          = estadoAbierto['fotoUrl'] as String?;
+      nombreClienteAbierto    = estadoAbierto['nombreClienteAbierto'] as String?;
+      ubicacionTextoCtrl.text = estadoAbierto['ubicacionTexto'] as String? ?? '';
+    } else {
+      nivelPeligro = data['nivelPeligro'] as String? ?? '';
+    }
+
+    fotoAbiertoPath = data['fotoLocalAbierto'] as String?;
+
+    estadoAbiertoGuardado = false;
+    estadoCerradoGuardado = false;
+    casoCerrado           = false;
+
+    // Restaurar borrador ANTES del primer notifyListeners
+    // para que los widgets reciban valores correctos en initState
+    _restoreDraftIfAny();
+
+    notifyListeners();
+  }
+
+  /// Llamar cuando el SyncService sincroniza este caso offline.
+  /// Actualiza el casoId al ID real de Firestore sin recargar los datos
+  /// del formulario — preserva lo que el usuario ya escribió.
+  void onCaseSynced(String firestoreId) {
+    casoId = firestoreId;
     notifyListeners();
   }
 
   @override
   void dispose() {
+    // ── Guardar draft INMEDIATAMENTE antes de destruir la pantalla ──
+    // El debounce de 600ms podría estar pendiente con datos no guardados
+    // (ej. el nombre del cliente o la ruta de la firma).
+    _saveDraftNow();
     ubicacionTextoCtrl.dispose();
-    _draftDebounce?.cancel();
     super.dispose();
   }
 }

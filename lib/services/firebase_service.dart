@@ -349,6 +349,14 @@ class FirebaseService {
     return doc.id;
   }
 
+  /// Igual que createCaso() pero deja claro en el call-site que se usa
+  /// el ID devuelto. Lo usa SyncService para registrar el ID real de
+  /// Firestore tras sincronizar un caso creado offline.
+  static Future<String> createCasoAndGetId(String grupoId, String empresaId,
+      String centroId, Map<String, dynamic> casoData) async {
+    return createCaso(grupoId, empresaId, centroId, casoData);
+  }
+
   static Future<void> updateCaso(String grupoId, String empresaId,
       String centroId, String casoId, Map<String, dynamic> data) async {
     await _casoDoc(grupoId, empresaId, centroId, casoId).update(data);

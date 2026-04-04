@@ -1,7 +1,9 @@
 // widgets/case_card.dart
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/case_model.dart';
 import '../data/risk_data.dart';
+import '../providers/interface_config_provider.dart';
 
 class CaseCard extends StatelessWidget {
   final Case caso;
@@ -25,8 +27,8 @@ class CaseCard extends StatelessWidget {
     this.mostrarMenu = false,
   });
 
-  IconData _getCaseIcon() {
-    return RiskData.getIconPorCategoria(caso.tipoRiesgo);
+  IconData _getCaseIcon(List<Map<String, dynamic>> todasLasCats) {
+    return RiskData.getIconPorCategoriaFromAll(caso.tipoRiesgo, todasLasCats);
   }
 
   Color _getnivelPeligroColor(String nivel) {
@@ -42,8 +44,8 @@ class CaseCard extends StatelessWidget {
     }
   }
 
-  Color _getTipoRiesgoColor(String tipo) {
-    return RiskData.getColorPorCategoria(tipo);
+  Color _getTipoRiesgoColor(String tipo, List<Map<String, dynamic>> todasLasCats) {
+    return RiskData.getColorPorCategoriaFromAll(tipo, todasLasCats);
   }
 
   void _mostrarMenu(BuildContext context) {
@@ -126,9 +128,15 @@ class CaseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tipoColor = _getTipoRiesgoColor(caso.tipoRiesgo);
+    // Leer categorías personalizadas del provider para mezclar con las estándar
+    final personalizadas = Provider.of<InterfaceConfigProvider>(
+            context, listen: false)
+        .categoriasPersonalizadas;
+    final todasLasCats = [...matrizPeligros, ...personalizadas];
+
+    final tipoColor = _getTipoRiesgoColor(caso.tipoRiesgo, todasLasCats);
     final nivelColor = nivelRiesgoColor ?? _getnivelPeligroColor(caso.nivelPeligro);
-    final caseIcon = _getCaseIcon();
+    final caseIcon = _getCaseIcon(todasLasCats);
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

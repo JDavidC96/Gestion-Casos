@@ -6,6 +6,7 @@ import './providers/auth_provider.dart';
 import './providers/case_provider.dart';
 import './providers/centro_trabajo_provider.dart';
 import './providers/interface_config_provider.dart';
+import './providers/connectivity_provider.dart';
 import './screens/login_screen.dart';
 import './screens/forgot_password_screen.dart';
 import './screens/super_admin_screen.dart';
@@ -20,16 +21,28 @@ import './screens/interface_config_screen.dart';
 import 'firebase_options.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import './services/case_draft_service.dart';
+import './services/offline_case_service.dart';
+import './services/connectivity_service.dart';
+import './services/sync_service.dart';
 import './screens/login_success_animation.dart';
 import './screens/group_admin_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 1. Hive primero (no requiere red)
   await Hive.initFlutter();
   await CaseDraftService.instance.init();
+  await OfflineCaseService.instance.init();
+
+  // 2. Firebase
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // 3. Conectividad y sincronización (requiere Firebase listo)
+  await ConnectivityService.instance.init();
+  SyncService.instance.init();
 
   runApp(const GestionCasosApp());
 }
@@ -45,6 +58,11 @@ class GestionCasosApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => CaseProvider()),
         ChangeNotifierProvider(create: (_) => CentroTrabajoProvider()),
         ChangeNotifierProvider(create: (_) => InterfaceConfigProvider()),
+        ChangeNotifierProvider(create: (_) {
+          final p = ConnectivityProvider();
+          p.init();
+          return p;
+        }),
       ],
       child: Consumer<InterfaceConfigProvider>(
         builder: (context, configProvider, _) {

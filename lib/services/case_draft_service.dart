@@ -20,6 +20,17 @@ class CaseDraftService {
     return null;
   }
 
+  /// Versión síncrona — solo funciona si init() ya fue llamado.
+  /// Usada por el controller para restaurar borradores antes del primer render.
+  Map<String, dynamic>? getDraftSync(String casoId) {
+    if (_box == null) return null;
+    final data = _box!.get(_key(casoId));
+    if (data is Map) {
+      return Map<String, dynamic>.from(data);
+    }
+    return null;
+  }
+
   Future<void> saveDraft(String casoId, Map<String, dynamic> draft) async {
     final box = _box ?? await Hive.openBox<dynamic>(_boxName);
     await box.put(_key(casoId), draft);

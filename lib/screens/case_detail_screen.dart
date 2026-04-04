@@ -6,6 +6,10 @@ import 'report_screen.dart';
 import '../controllers/case_detail_controller.dart';
 import '../providers/auth_provider.dart';
 import '../providers/interface_config_provider.dart';
+import '../providers/connectivity_provider.dart';
+import '../services/offline_case_service.dart';
+import '../services/sync_service.dart';
+import 'dart:async';
 import '../widgets/case_state_card_firebase.dart';
 import '../widgets/closed_state_card_firebase.dart';
 import '../widgets/configurable_feature.dart';
@@ -20,6 +24,8 @@ class CaseDetailScreen extends StatefulWidget {
 
 class _CaseDetailScreenState extends State<CaseDetailScreen> {
   late final CaseDetailController _ctrl;
+  bool _esOffline = false;   // true si el caso aún no está en Firestore
+  StreamSubscription? _syncSub;
   final SignatureController _signatureController = SignatureController(
     penStrokeWidth: 3,
     penColor: Colors.black,
@@ -33,6 +39,42 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initAll();
     });
+    // Cuando SyncService termina, verificar si este caso fue sincronizado
+    _syncSub = SyncService.instance.onSyncDone.listen((_) {
+      if (_esOffline && mounted) _checkIfSynced();
+    });
+  }
+
+  /// Verifica si el caso offline ya fue sincronizado y tiene ID real en Firestore.
+  /// Si es así, actualiza el controller sin borrar lo que el usuario escribió.
+  void _checkIfSynced() {
+    final offlineId = _ctrl.casoId;
+    if (offlineId == null || !offlineId.startsWith('offline_')) return;
+
+    // Buscar si el caso fue marcado como sincronizado (firestoreId disponible)
+    final syncedCase = OfflineCaseService.instance.getCase(offlineId);
+    if (syncedCase == null) {
+      // El caso fue eliminado de Hive — ya está en Firestore
+      // No podemos recuperar el firestoreId en este punto, pero al menos
+      // desbloqueamos la pantalla para que el usuario sepa que puede navegar
+      return;
+    }
+    final firestoreId = syncedCase['firestoreId'] as String?;
+    if (firestoreId != null) {
+      setState(() => _esOffline = false);
+      _ctrl.onCaseSynced(firestoreId);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(children: [
+            Icon(Icons.cloud_done, color: Colors.white, size: 18),
+            SizedBox(width: 8),
+            Text('Caso sincronizado — ya puedes guardar'),
+          ]),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
   }
 
   Future<void> _initAll() async {
@@ -42,6 +84,7 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
 
     _ctrl.initFromArgs(args);
     _ctrl.setUsuario(authProvider.userData);
+    _esOffline = args?['esOffline'] == true;
 
     // Registrar listener antes de cargar para que la UI reaccione inmediatamente
     _ctrl.addListener(_onControllerChanged);
@@ -51,9 +94,18 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
       configProvider.loadConfig(authProvider.grupoId!);
     }
 
-    // PRIORIDAD 1: Cargar datos del caso desde Firestore (lo que el usuario necesita ver)
+    // PRIORIDAD 1: Cargar datos del caso
     try {
-      await _ctrl.loadFromFirestore();
+      if (_esOffline) {
+        // Caso offline: leer desde Hive
+        final casoId = _ctrl.casoId ?? '';
+        final localData = OfflineCaseService.instance.getCase(casoId);
+        if (localData != null) {
+          _ctrl.loadFromLocalData(localData);
+        }
+      } else {
+        await _ctrl.loadFromFirestore();
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -74,6 +126,7 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
 
   @override
   void dispose() {
+    _syncSub?.cancel();
     _ctrl.removeListener(_onControllerChanged);
     _ctrl.dispose();
     _signatureController.dispose();
@@ -123,6 +176,28 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
   }
 
   Future<void> _guardarEstadoAbierto() async {
+    // Bloquear si el caso aún no está sincronizado con Firestore
+    if (_esOffline) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.cloud_off, color: Colors.white, size: 18),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Disponible al sincronizar. Conecta a internet para guardar.',
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
     if (!_puedeCerrarCasos()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No tienes permisos para guardar estados de casos'), backgroundColor: Colors.red),
@@ -150,6 +225,27 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
   }
 
   Future<void> _guardarEstadoCerrado() async {
+    if (_esOffline) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.cloud_off, color: Colors.white, size: 18),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Disponible al sincronizar. Conecta a internet para cerrar el caso.',
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
     if (!_puedeCerrarCasos()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No tienes permisos para cerrar casos'), backgroundColor: Colors.red),
@@ -210,6 +306,30 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
             backgroundColor: AppColors.warmOrangeStart,
             elevation: 0,
             iconTheme: const IconThemeData(color: Colors.white),
+            bottom: _esOffline
+                ? PreferredSize(
+                    preferredSize: const Size.fromHeight(28),
+                    child: Container(
+                      width: double.infinity,
+                      color: Colors.orange.shade700,
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 5, horizontal: 12),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.cloud_off, size: 14, color: Colors.white),
+                          SizedBox(width: 6),
+                          Text(
+                            'Caso offline — guarda y cierre disponibles al sincronizar',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w500),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : null,
           ),
           body: _ctrl.isLoading
               ? const Center(child: CircularProgressIndicator())
@@ -255,7 +375,7 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
                                 subiendoFoto: _ctrl.subiendoFotoAbierto,
                                 firmaCliente: _ctrl.firmaClienteAbierto,
                                 nombreCliente: _ctrl.nombreClienteAbierto,
-                                onFirmaClienteChanged: (bytes) => setState(() => _ctrl.firmaClienteAbierto = bytes),
+                                onFirmaClienteChanged: (bytes) => _ctrl.setFirmaCliente(esAbierto: true, bytes: bytes),
                                 onNombreClienteChanged: (value) {
                                   setState(() => _ctrl.nombreClienteAbierto = value);
                                   _ctrl.scheduleDraftSave();
@@ -292,7 +412,7 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
                                   subiendoFoto: _ctrl.subiendoFotoCerrado,
                                   firmaCliente: _ctrl.firmaClienteCerrado,
                                   nombreCliente: _ctrl.nombreClienteCerrado,
-                                  onFirmaClienteChanged: (bytes) => setState(() => _ctrl.firmaClienteCerrado = bytes),
+                                  onFirmaClienteChanged: (bytes) => _ctrl.setFirmaCliente(esAbierto: false, bytes: bytes),
                                   onNombreClienteChanged: (value) {
                                     setState(() => _ctrl.nombreClienteCerrado = value);
                                     _ctrl.scheduleDraftSave();

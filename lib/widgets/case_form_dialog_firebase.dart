@@ -2,10 +2,12 @@
 import 'package:flutter/material.dart';
 import '../models/empresa_model.dart';
 import '../services/firebase_service.dart';
+import '../services/offline_case_service.dart';
 import '../data/risk_data.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/interface_config_provider.dart';
+import '../providers/connectivity_provider.dart';
 
 class CaseFormDialogFirebase extends StatefulWidget {
   final Empresa empresa;
@@ -42,8 +44,6 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
   @override
   void initState() {
     super.initState();
-    // _selectedCategoria y subgrupo se inicializan en didChangeDependencies
-    // una vez que el provider esté disponible
   }
 
   @override
@@ -66,57 +66,40 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
     }
   }
 
-  /// Devuelve las categorías habilitadas según la configuración del grupo,
-  /// incluyendo las categorías personalizadas.
   List<String> _getCategoriasDisponibles(
     Map<String, dynamic> config,
     List<Map<String, dynamic>> personalizadas,
   ) {
     final todosSubtipos = config['todosLosSubtipos'] as bool? ?? true;
-
-    // Lista completa: estándar + personalizadas
     final todasEstandar = RiskData.getCategorias();
     final todasPersonalizadas =
         personalizadas.map((c) => c['categoria'] as String).toList();
     final todas = [...todasEstandar, ...todasPersonalizadas];
-
     if (todosSubtipos) return todas;
-
     final habilitadas =
         config['categoriasHabilitadas'] as Map<String, dynamic>? ?? {};
     final filtradas = todas.where((c) => habilitadas[c] == true).toList();
     return filtradas.isNotEmpty ? filtradas : todas;
   }
 
-  /// Devuelve los subtipos habilitados + personalizados para una categoría,
-  /// incluyendo subgrupos de categorías personalizadas.
   List<String> _getSubgruposDisponibles(
     Map<String, dynamic> config,
     List<Map<String, dynamic>> personalizadas,
     String categoria,
   ) {
     final todosSubtipos = config['todosLosSubtipos'] as bool? ?? true;
-
-    // Construir lista mezclada para buscar subgrupos
     final todasLasCats = [...matrizPeligros, ...personalizadas];
-
-    // Subgrupos base de la categoría (estándar o personalizada)
     final base = RiskData.getSubgruposPorCategoriaFromAll(categoria, todasLasCats);
-
     if (todosSubtipos) return base;
-
     final habilitados =
         config['subtiposHabilitados'] as Map<String, dynamic>? ?? {};
     final personalizadosRaw =
         config['subtiposPersonalizados'] as Map<String, dynamic>? ?? {};
-
-    // Subtipos personalizados dentro de categorías estándar
     final subtiposPersonalizadosEnCat =
         (personalizadosRaw[categoria] as List<dynamic>? ?? [])
             .cast<String>()
             .where((s) => habilitados[s] != false)
             .toList();
-
     final filtrados = base.where((s) => habilitados[s] == true).toList();
     final result = [...filtrados, ...subtiposPersonalizadosEnCat];
     return result.isNotEmpty ? result : base;
@@ -129,13 +112,11 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
   }
 
   bool get _isFormValid =>
-      _nombreController.text.trim().isNotEmpty &&
-      _selectedSubgrupo != null;
+      _nombreController.text.trim().isNotEmpty && _selectedSubgrupo != null;
 
   Future<void> _handleSave() async {
     if (!_formKey.currentState!.validate()) return;
 
-    // Validar que los IDs críticos no estén vacíos
     final grupoId = widget.grupoId ?? '';
     final centroId = widget.centroId ?? '';
     if (grupoId.isEmpty || centroId.isEmpty || widget.empresaId.isEmpty) {
@@ -156,8 +137,9 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final configProvider =
           Provider.of<InterfaceConfigProvider>(context, listen: false);
+      final connectivityProvider =
+          Provider.of<ConnectivityProvider>(context, listen: false);
 
-      // Lista mezclada para resolver el número de categoría
       final todasLasCats = [
         ...matrizPeligros,
         ...configProvider.categoriasPersonalizadas,
@@ -179,17 +161,39 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
         'creadoPor': authProvider.userData?['uid'],
       };
 
-      // Solo agregar nivel de peligro si está habilitado en la configuración
       if (configProvider.isFeatureEnabled('mostrarNivelPeligroEnDialog')) {
         casoData['nivelPeligro'] = _selectednivelPeligro;
       }
 
+      // ── OFFLINE: guardar en Hive ──────────────────────────────────────────
+      if (!connectivityProvider.isOnline) {
+        await OfflineCaseService.instance.saveCase(casoData);
+        if (mounted) {
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.cloud_off, color: Colors.white, size: 18),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Caso guardado localmente. Se sincronizará al recuperar conexión.',
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+        return;
+      }
+
+      // ── ONLINE: guardar en Firestore ──────────────────────────────────────
       await FirebaseService.createCaso(
-        grupoId,
-        widget.empresaId,
-        centroId,
-        casoData,
-      );
+          grupoId, widget.empresaId, centroId, casoData);
 
       if (mounted) {
         Navigator.pop(context);
@@ -203,36 +207,25 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Color _getnivelPeligroColor(String nivel) {
     switch (nivel) {
-      case 'Bajo':
-        return Colors.green;
-      case 'Medio':
-        return Colors.orange;
-      case 'Alto':
-        return Colors.red[400]!;
-      default:
-        return Colors.grey;
+      case 'Bajo':  return Colors.green;
+      case 'Medio': return Colors.orange;
+      case 'Alto':  return Colors.red[400]!;
+      default:      return Colors.grey;
     }
   }
 
   Widget _buildCategoriaSelector(
-    List<String> categorias,
-    List<Map<String, dynamic>> todasLasCats,
-  ) {
+      List<String> categorias, List<Map<String, dynamic>> todasLasCats) {
     return DropdownButtonFormField<String>(
       value: categorias.contains(_selectedCategoria)
           ? _selectedCategoria
@@ -248,18 +241,13 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
                 child: Row(
                   children: [
                     Icon(
-                      RiskData.getIconPorCategoriaFromAll(
-                          categoria, todasLasCats),
-                      color: RiskData.getColorPorCategoriaFromAll(
-                          categoria, todasLasCats),
+                      RiskData.getIconPorCategoriaFromAll(categoria, todasLasCats),
+                      color: RiskData.getColorPorCategoriaFromAll(categoria, todasLasCats),
                       size: 20,
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: Text(
-                        categoria,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      child: Text(categoria, overflow: TextOverflow.ellipsis),
                     ),
                   ],
                 ),
@@ -273,8 +261,7 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
           final personalizadas =
               Provider.of<InterfaceConfigProvider>(context, listen: false)
                   .categoriasPersonalizadas;
-          final subs =
-              _getSubgruposDisponibles(config, personalizadas, value);
+          final subs = _getSubgruposDisponibles(config, personalizadas, value);
           setState(() {
             _selectedCategoria = value;
             _selectedSubgrupo = subs.isNotEmpty ? subs[0] : null;
@@ -282,9 +269,7 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
         }
       },
       validator: (value) {
-        if (value == null || value.isEmpty) {
-          return 'Seleccione una categoría';
-        }
+        if (value == null || value.isEmpty) return 'Seleccione una categoría';
         return null;
       },
     );
@@ -301,33 +286,21 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
       items: subgrupos
           .map((subgrupo) => DropdownMenuItem(
                 value: subgrupo,
-                child: Text(
-                  subgrupo,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                child: Text(subgrupo, overflow: TextOverflow.ellipsis),
               ))
           .toList(),
       onChanged: (value) {
-        if (value != null) {
-          setState(() {
-            _selectedSubgrupo = value;
-          });
-        }
+        if (value != null) setState(() => _selectedSubgrupo = value);
       },
       validator: (value) {
-        if (value == null || value.isEmpty) {
-          return 'Seleccione un tipo específico';
-        }
+        if (value == null || value.isEmpty) return 'Seleccione un tipo específico';
         return null;
       },
     );
   }
 
   Widget _buildNivelPeligroSelector(bool mostrar) {
-    if (!mostrar) {
-      return const SizedBox.shrink();
-    }
-
+    if (!mostrar) return const SizedBox.shrink();
     return DropdownButtonFormField<String>(
       value: _selectednivelPeligro,
       decoration: const InputDecoration(
@@ -354,11 +327,7 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
               ))
           .toList(),
       onChanged: (value) {
-        if (value != null) {
-          setState(() {
-            _selectednivelPeligro = value;
-          });
-        }
+        if (value != null) setState(() => _selectednivelPeligro = value);
       },
     );
   }
@@ -366,25 +335,21 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
   @override
   Widget build(BuildContext context) {
     final configProvider = Provider.of<InterfaceConfigProvider>(context);
+    final connectivityProvider = Provider.of<ConnectivityProvider>(context);
     final config = configProvider.currentConfig;
     final personalizadas = configProvider.categoriasPersonalizadas;
-
-    // Lista mezclada para íconos y colores
     final todasLasCats = [...matrizPeligros, ...personalizadas];
 
-    final categoriasDisponibles =
-        _getCategoriasDisponibles(config, personalizadas);
+    final categoriasDisponibles = _getCategoriasDisponibles(config, personalizadas);
     final subgruposDisponibles = _getSubgruposDisponibles(
       config,
       personalizadas,
       _selectedCategoria.isNotEmpty
           ? _selectedCategoria
-          : (categoriasDisponibles.isNotEmpty
-              ? categoriasDisponibles[0]
-              : 'Físico'),
+          : (categoriasDisponibles.isNotEmpty ? categoriasDisponibles[0] : 'Físico'),
     );
-    final mostrarNivelPeligro =
-        config['mostrarNivelPeligroEnDialog'] as bool? ?? false;
+    final mostrarNivelPeligro = config['mostrarNivelPeligroEnDialog'] as bool? ?? false;
+    final isOffline = !connectivityProvider.isOnline;
 
     return Dialog(
       insetPadding: const EdgeInsets.all(20),
@@ -399,14 +364,48 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                "Nuevo Caso",
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
+              // Título
+              Row(
+                children: [
+                  Text(
+                    "Nuevo Caso",
+                    style: Theme.of(context)
+                        .textTheme
+                        .headlineSmall
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  if (isOffline) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade100,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.orange.shade300),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.cloud_off,
+                              size: 12, color: Colors.orange.shade700),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Sin conexión',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.orange.shade700,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
+                  ],
+                ],
               ),
               const SizedBox(height: 20),
-              
+
               Expanded(
                 child: SingleChildScrollView(
                   child: Form(
@@ -414,6 +413,33 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        // Banner offline
+                        if (isOffline)
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(10),
+                            margin: const EdgeInsets.only(bottom: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.orange.shade200),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.info_outline,
+                                    color: Colors.orange, size: 16),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'El caso se guardará localmente y se sincronizará al recuperar conexión.',
+                                    style: TextStyle(
+                                        fontSize: 12, color: Colors.orange),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.all(12),
@@ -453,9 +479,7 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
                                     Text(
                                       'Centro: ${widget.centroNombre}',
                                       style: TextStyle(
-                                        color: Colors.blue[600],
-                                        fontSize: 12,
-                                      ),
+                                          color: Colors.blue[600], fontSize: 12),
                                     ),
                                   ],
                                 ),
@@ -471,9 +495,7 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
                                     Text(
                                       'Grupo: ${widget.grupoNombre}',
                                       style: TextStyle(
-                                        color: Colors.blue[600],
-                                        fontSize: 12,
-                                      ),
+                                          color: Colors.blue[600], fontSize: 12),
                                     ),
                                   ],
                                 ),
@@ -481,7 +503,7 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
                             ],
                           ),
                         ),
-                        
+
                         TextFormField(
                           controller: _nombreController,
                           decoration: const InputDecoration(
@@ -497,15 +519,13 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
                           },
                         ),
                         const SizedBox(height: 16),
-                        
-                        _buildCategoriaSelector(
-                            categoriasDisponibles, todasLasCats),
+
+                        _buildCategoriaSelector(categoriasDisponibles, todasLasCats),
                         const SizedBox(height: 16),
-                        
+
                         _buildSubgrupoSelector(subgruposDisponibles),
                         const SizedBox(height: 16),
-                        
-                        // Nivel de peligro condicional
+
                         _buildNivelPeligroSelector(mostrarNivelPeligro),
                         if (mostrarNivelPeligro) const SizedBox(height: 16),
                       ],
@@ -513,9 +533,9 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
                   ),
                 ),
               ),
-              
+
               const SizedBox(height: 20),
-              
+
               Row(
                 children: [
                   Expanded(
@@ -530,14 +550,19 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
                     child: ElevatedButton(
                       onPressed:
                           (_isFormValid && !_isLoading) ? _handleSave : null,
+                      style: isOffline
+                          ? ElevatedButton.styleFrom(
+                              backgroundColor: Colors.orange,
+                              foregroundColor: Colors.white,
+                            )
+                          : null,
                       child: _isLoading
                           ? const SizedBox(
                               width: 16,
                               height: 16,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2),
+                              child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Text("Crear Caso"),
+                          : Text(isOffline ? "Guardar offline" : "Crear Caso"),
                     ),
                   ),
                 ],

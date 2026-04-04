@@ -275,22 +275,26 @@ class RiskData {
   
   static List<String> getSubgruposPorCategoria(String categoriaNombre) {
     final categoria = getCategoriaPorNombre(categoriaNombre);
-    return categoria != null ? List<String>.from(categoria["subgrupos"] ?? []) : [];
+    if (categoria == null || categoria.isEmpty) return [];
+    return List<String>.from(categoria["subgrupos"] ?? []);
   }
   
   static IconData getIconPorCategoria(String categoriaNombre) {
     final categoria = getCategoriaPorNombre(categoriaNombre);
-    return categoria != null ? categoria["icon"] as IconData : Icons.help;
+    if (categoria == null || categoria.isEmpty) return Icons.help;
+    return (categoria["icon"] as IconData?) ?? Icons.help;
   }
   
   static Color getColorPorCategoria(String categoriaNombre) {
     final categoria = getCategoriaPorNombre(categoriaNombre);
-    return categoria != null ? categoria["color"] as Color : Colors.grey;
+    if (categoria == null || categoria.isEmpty) return Colors.grey;
+    return (categoria["color"] as Color?) ?? Colors.grey;
   }
   
   static int getNumeroCategoria(String categoriaNombre) {
     final categoria = getCategoriaPorNombre(categoriaNombre);
-    return categoria != null ? categoria["numeroCategoria"] as int : 0;
+    if (categoria == null || categoria.isEmpty) return 0;
+    return (categoria["numeroCategoria"] as int?) ?? 0;
   }
 
   // ── Helpers para íconos serializables ────────────────────────────────────
