@@ -34,23 +34,66 @@ class GroupCard extends StatelessWidget {
   }
 
   Widget _buildHeader() {
+    final activo = groupData['activo'] as bool? ?? true;
+    final suspendido = groupData['suspendido'] as bool? ?? false;
+
     return Row(
       children: [
-        const CircleAvatar(
-          backgroundColor: Colors.green,
-          child: Icon(Icons.group, color: Colors.white),
+        CircleAvatar(
+          backgroundColor: activo ? Colors.green : Colors.red,
+          child: Icon(
+            activo ? Icons.group : Icons.block,
+            color: Colors.white,
+          ),
         ),
         const SizedBox(width: 16),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                groupData['nombre'] ?? 'Sin nombre',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      groupData['nombre'] ?? 'Sin nombre',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  // Badge de estado
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: suspendido
+                          ? Colors.red.shade50
+                          : activo
+                              ? Colors.green.shade50
+                              : Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: suspendido
+                            ? Colors.red.shade200
+                            : activo
+                                ? Colors.green.shade200
+                                : Colors.grey.shade300,
+                      ),
+                    ),
+                    child: Text(
+                      suspendido ? 'Suspendido' : activo ? 'Activo' : 'Inactivo',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: suspendido
+                            ? Colors.red
+                            : activo
+                                ? Colors.green
+                                : Colors.grey,
+                      ),
+                    ),
+                  ),
+                ],
               ),
               Text(
                 groupData['descripcion'] ?? 'Sin descripción',
@@ -70,6 +113,15 @@ class GroupCard extends StatelessWidget {
               child: ListTile(
                 leading: Icon(Icons.open_in_new, size: 20, color: Colors.blue),
                 title: Text('Ver Grupo'),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'subscription',
+              child: ListTile(
+                leading: Icon(Icons.payment, size: 20, color: Colors.green),
+                title: Text('Suscripción'),
                 contentPadding: EdgeInsets.zero,
                 dense: true,
               ),
@@ -120,13 +172,19 @@ class GroupCard extends StatelessWidget {
             }).length
           : 0;
 
+        final activo = groupData['activo'] as bool? ?? true;
+
         return Row(
           children: [
             _buildCountChip('$userCount Usuarios', Icons.people),
             const SizedBox(width: 8),
             _buildCountChip('$adminCount Admins', Icons.admin_panel_settings),
             const SizedBox(width: 8),
-            _buildCountChip('Activo', Icons.check_circle, color: Colors.green),
+            _buildCountChip(
+              activo ? 'Activo' : 'Suspendido',
+              activo ? Icons.check_circle : Icons.cancel,
+              color: activo ? Colors.green : Colors.red,
+            ),
           ],
         );
       },

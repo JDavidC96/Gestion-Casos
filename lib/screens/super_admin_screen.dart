@@ -12,6 +12,7 @@ import '../widgets/user_card.dart';
 import '../widgets/group_card.dart';
 import '../widgets/assign_empresas_dialog.dart';
 import 'dashboard_screen.dart';
+import '../widgets/subscription_dialog.dart';
 
 class SuperAdminScreen extends StatefulWidget {
   const SuperAdminScreen({super.key});
@@ -99,7 +100,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          colors: [Color.fromARGB(255, 49, 45, 49), Color.fromARGB(255, 2, 2, 2)],
+          colors: [Color.fromARGB(255, 0, 0, 0), Color.fromARGB(255, 0, 0, 0)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -856,6 +857,9 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
           },
         );
         break;
+      case 'subscription':
+        _gestionarSuscripcion(groupId, groupData);
+        break;
       case 'config':
         _configurarInterfaz(groupId, groupData);
         break;
@@ -922,6 +926,16 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
       'groupId': groupId,
       'groupData': groupData,
     });
+  }
+
+  void _gestionarSuscripcion(String groupId, Map<String, dynamic> groupData) {
+    showDialog(
+      context: context,
+      builder: (_) => SubscriptionDialog(
+        grupoId: groupId,
+        grupoNombre: groupData['nombre'] as String? ?? 'Sin nombre',
+      ),
+    );
   }
 
   void _editarUsuario(String userId, Map<String, dynamic> userData) {
