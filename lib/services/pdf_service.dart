@@ -11,9 +11,9 @@ class PdfService {
   /// Extrae el fileId de cualquier variante de URL de Google Drive.
   static String? _extraerFileIdDrive(String url) {
     // /d/{id}/  ó  id={id}
-    return RegExp(r'(?:\/d\/|[?&]id=)([a-zA-Z0-9-_]+)')
-        .firstMatch(url)
-        ?.group(1);
+    return RegExp(
+      r'(?:\/d\/|[?&]id=)([a-zA-Z0-9-_]+)',
+    ).firstMatch(url)?.group(1);
   }
 
   /// Descarga una imagen de forma robusta:
@@ -30,17 +30,29 @@ class PdfService {
     // JPEG: empieza con FF D8 FF
     if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) return true;
     // PNG: empieza con 89 50 4E 47
-    if (bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) return true;
+    if (bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4E &&
+        bytes[3] == 0x47)
+      return true;
     // GIF: empieza con 47 49 46
     if (bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46) return true;
     // WebP: empieza con 52 49 46 46 ... 57 45 42 50
-    if (bytes.length > 12 && bytes[0] == 0x52 && bytes[1] == 0x49 &&
-        bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50) return true;
+    if (bytes.length > 12 &&
+        bytes[0] == 0x52 &&
+        bytes[1] == 0x49 &&
+        bytes[8] == 0x57 &&
+        bytes[9] == 0x45 &&
+        bytes[10] == 0x42 &&
+        bytes[11] == 0x50)
+      return true;
     return false;
   }
 
-  static Future<Uint8List?> _descargarImagen(String? rawUrl,
-      {int reintentos = 3}) async {
+  static Future<Uint8List?> _descargarImagen(
+    String? rawUrl, {
+    int reintentos = 3,
+  }) async {
     if (rawUrl == null || rawUrl.isEmpty) return null;
 
     // Construir lista de URLs a intentar en orden
@@ -86,8 +98,9 @@ class PdfService {
           if (contentType.contains('text/html')) {
             final body = response.body;
             // Extraer el token 'confirm' del formulario de Drive
-            final confirmMatch =
-                RegExp(r'confirm=([^&"&\s]+)').firstMatch(body);
+            final confirmMatch = RegExp(
+              r'confirm=([^&"&\s]+)',
+            ).firstMatch(body);
             if (confirmMatch != null) {
               final confirmUrl =
                   'https://drive.google.com/uc?export=download'
@@ -119,30 +132,46 @@ class PdfService {
   /// Genera los bytes del PDF sin mostrarlo ni compartirlo.
   /// Usado internamente por [generarReportePDF] y [compartirReportePDF],
   /// y también expuesto para que la UI pueda pre-construir el PDF con indicador de carga.
-  static Future<({Uint8List bytes, String nombre, List<String> advertencias})> buildPdfBytes(
-      Case? caso, Map<String, dynamic> data) async {
+  static Future<({Uint8List bytes, String nombre, List<String> advertencias})>
+  buildPdfBytes(Case? caso, Map<String, dynamic> data) async {
     final pdf = pw.Document();
     final advertencias = <String>[];
 
-    final String nombreCaso     = _obtenerValor(caso?.nombre,          data['nombre'])          ?? 'Sin Nombre';
-    final String categoria      = _obtenerValor(caso?.tipoRiesgo,      data['tipoRiesgo'])      ?? 'N/A';
-    final String tipoEspecifico = _obtenerValor(caso?.subgrupoRiesgo,  data['subgrupoRiesgo'])  ?? 'N/A';
-    final String empresa        = _obtenerValor(caso?.empresaNombre,   data['empresaNombre'])   ?? 'N/A';
-    final String centro         = _obtenerValor(caso?.centroNombre,    data['centroNombre'])    ?? 'Principal';
+    final String nombreCaso =
+        _obtenerValor(caso?.nombre, data['nombre']) ?? 'Sin Nombre';
+    final String categoria =
+        _obtenerValor(caso?.tipoRiesgo, data['tipoRiesgo']) ?? 'N/A';
+    final String tipoEspecifico =
+        _obtenerValor(caso?.subgrupoRiesgo, data['subgrupoRiesgo']) ?? 'N/A';
+    final String empresa =
+        _obtenerValor(caso?.empresaNombre, data['empresaNombre']) ?? 'N/A';
+    final String centro =
+        _obtenerValor(caso?.centroNombre, data['centroNombre']) ?? 'Principal';
 
-    final Map<String, dynamic> estadoAbierto = data['estadoAbierto'] as Map<String, dynamic>? ?? {};
+    final Map<String, dynamic> estadoAbierto =
+        data['estadoAbierto'] as Map<String, dynamic>? ?? {};
 
-    final String nivelRiesgo  = _obtenerValor(caso?.nivelPeligro,   estadoAbierto['nivelPeligro'])   ?? data['nivelPeligro']   ?? 'N/A';
-    final String ubicacion    = estadoAbierto['ubicacionTexto']         ?? 'N/A';
-    final String descHallazgo = estadoAbierto['descripcionHallazgo']    ?? data['descripcionRiesgo'] ?? 'Sin descripción';
-    final String control      = estadoAbierto['recomendacionesControl'] ?? 'N/A';
-    final String nombreClienteAbierto = estadoAbierto['nombreCliente'] as String? ?? '';
+    final String nivelRiesgo =
+        _obtenerValor(caso?.nivelPeligro, estadoAbierto['nivelPeligro']) ??
+        data['nivelPeligro'] ??
+        'N/A';
+    final String ubicacion = estadoAbierto['ubicacionTexto'] ?? 'N/A';
+    final String descHallazgo =
+        estadoAbierto['descripcionHallazgo'] ??
+        data['descripcionRiesgo'] ??
+        'Sin descripción';
+    final String control = estadoAbierto['recomendacionesControl'] ?? 'N/A';
+    final String nombreClienteAbierto =
+        estadoAbierto['nombreCliente'] as String? ?? '';
 
     // ── Estado Cerrado ──
     final bool esCerrado = data['cerrado'] == true;
-    final Map<String, dynamic> estadoCerrado = data['estadoCerrado'] as Map<String, dynamic>? ?? {};
-    final String descSolucion = estadoCerrado['descripcionSolucion'] as String? ?? '';
-    final String nombreClienteCerrado = estadoCerrado['nombreCliente'] as String? ?? '';
+    final Map<String, dynamic> estadoCerrado =
+        data['estadoCerrado'] as Map<String, dynamic>? ?? {};
+    final String descSolucion =
+        estadoCerrado['descripcionSolucion'] as String? ?? '';
+    final String nombreClienteCerrado =
+        estadoCerrado['nombreCliente'] as String? ?? '';
 
     DateTime? fechaCierre;
     if (data['fechaCierre'] is Timestamp) {
@@ -150,9 +179,10 @@ class PdfService {
     }
 
     // Nombre del inspector: estadoAbierto → data raíz → perfil del usuario en Firestore
-    String inspector = _obtenerValor(caso?.usuarioNombre, estadoAbierto['usuarioNombre'])
-        ?? data['usuarioNombre'] as String?
-        ?? '';
+    String inspector =
+        _obtenerValor(caso?.usuarioNombre, estadoAbierto['usuarioNombre']) ??
+        data['usuarioNombre'] as String? ??
+        '';
 
     DateTime fechaC;
     if (data['fechaCreacion'] is Timestamp) {
@@ -161,37 +191,49 @@ class PdfService {
       fechaC = caso?.fechaCreacion ?? DateTime.now();
     }
     final String fechaTexto = DateFormat('dd/MM/yyyy').format(fechaC);
-    final String horaTexto  = DateFormat('HH:mm:ss').format(fechaC);
+    final String horaTexto = DateFormat('HH:mm:ss').format(fechaC);
 
     // ── Lanzar todas las descargas en paralelo ──
-    final fotoFuture              = _cargarImagenHallazgo(estadoAbierto);
-    final logoFuture              = _cargarLogoGrupo(data['grupoId'] as String?);
-    final firmaInspFuture         = _cargarFirmaInspector(data['creadoPor'] as String?);
-    final firmaClienteAbFuture    = _cargarFirmaCliente(estadoAbierto);
-    final fotoCerradoFuture       = esCerrado ? _cargarFotoCerrado(estadoCerrado) : Future.value(null);
-    final firmaClienteCeFuture    = esCerrado ? _cargarFirmaCliente(estadoCerrado) : Future.value(null);
+    final fotoFuture = _cargarImagenHallazgo(estadoAbierto);
+    final logoFuture = _cargarLogoGrupo(data['grupoId'] as String?);
+    final firmaInspFuture = _cargarFirmaInspector(data['creadoPor'] as String?);
+    final firmaClienteAbFuture = _cargarFirmaCliente(estadoAbierto);
+    final fotoCerradoFuture = esCerrado
+        ? _cargarFotoCerrado(estadoCerrado)
+        : Future.value(null);
+    final firmaClienteCeFuture = esCerrado
+        ? _cargarFirmaCliente(estadoCerrado)
+        : Future.value(null);
     // Si no hay nombre del inspector, intentar obtenerlo del perfil del usuario
     final inspectorNameFuture = (inspector.isEmpty && data['creadoPor'] != null)
         ? _cargarNombreUsuario(data['creadoPor'] as String)
         : Future.value(null);
 
-    final pw.MemoryImage? imageHallazgo         = await fotoFuture;
-    final pw.MemoryImage? imagenLogo            = await logoFuture;
-    final pw.MemoryImage? imagenFirmaInspector  = await firmaInspFuture;
-    final pw.MemoryImage? imagenFirmaClienteAb  = await firmaClienteAbFuture;
-    final pw.MemoryImage? imagenFotoCerrado     = await fotoCerradoFuture;
-    final pw.MemoryImage? imagenFirmaClienteCe  = await firmaClienteCeFuture;
-    final String? inspectorFromProfile          = await inspectorNameFuture;
+    final pw.MemoryImage? imageHallazgo = await fotoFuture;
+    final pw.MemoryImage? imagenLogo = await logoFuture;
+    final pw.MemoryImage? imagenFirmaInspector = await firmaInspFuture;
+    final pw.MemoryImage? imagenFirmaClienteAb = await firmaClienteAbFuture;
+    final pw.MemoryImage? imagenFotoCerrado = await fotoCerradoFuture;
+    final pw.MemoryImage? imagenFirmaClienteCe = await firmaClienteCeFuture;
+    final String? inspectorFromProfile = await inspectorNameFuture;
     if (inspector.isEmpty && inspectorFromProfile != null) {
       inspector = inspectorFromProfile;
     }
     if (inspector.isEmpty) inspector = 'N/A';
 
-    if (imageHallazgo == null      && (estadoAbierto['fotoUrl']        as String?) != null) advertencias.add('No se pudo cargar la foto del hallazgo');
-    if (imagenFirmaInspector == null && (data['creadoPor']             as String?) != null) advertencias.add('No se pudo cargar la firma del inspector');
-    if (imagenFirmaClienteAb == null && (estadoAbierto['firmaClienteUrl'] as String?) != null) advertencias.add('No se pudo cargar la firma del cliente (apertura)');
-    if (imagenFotoCerrado == null && (estadoCerrado['fotoUrl']        as String?) != null) advertencias.add('No se pudo cargar la foto de la solución');
-    if (imagenFirmaClienteCe == null && (estadoCerrado['firmaClienteUrl'] as String?) != null) advertencias.add('No se pudo cargar la firma del cliente (cierre)');
+    if (imageHallazgo == null && (estadoAbierto['fotoUrl'] as String?) != null)
+      advertencias.add('No se pudo cargar la foto del hallazgo');
+    if (imagenFirmaInspector == null && (data['creadoPor'] as String?) != null)
+      advertencias.add('No se pudo cargar la firma del inspector');
+    if (imagenFirmaClienteAb == null &&
+        (estadoAbierto['firmaClienteUrl'] as String?) != null)
+      advertencias.add('No se pudo cargar la firma del cliente (apertura)');
+    if (imagenFotoCerrado == null &&
+        (estadoCerrado['fotoUrl'] as String?) != null)
+      advertencias.add('No se pudo cargar la foto de la solución');
+    if (imagenFirmaClienteCe == null &&
+        (estadoCerrado['firmaClienteUrl'] as String?) != null)
+      advertencias.add('No se pudo cargar la firma del cliente (cierre)');
 
     pdf.addPage(
       pw.MultiPage(
@@ -203,7 +245,16 @@ class PdfService {
             _tituloSeccion("1. Información General"),
             _buildInfoTable(empresa, fechaTexto, horaTexto, centro, inspector),
             _tituloSeccion("2. Hallazgo (Estado Abierto)"),
-            _buildDataTable(nombreCaso, categoria, tipoEspecifico, ubicacion, descHallazgo, nivelRiesgo, control, imageHallazgo),
+            _buildDataTable(
+              nombreCaso,
+              categoria,
+              tipoEspecifico,
+              ubicacion,
+              descHallazgo,
+              nivelRiesgo,
+              control,
+              imageHallazgo,
+            ),
           ];
 
           // ── Sección 3: Estado Cerrado (solo si el caso está cerrado) ──
@@ -213,18 +264,38 @@ class PdfService {
                 : 'N/A';
             widgets.add(pw.SizedBox(height: 10));
             widgets.add(_tituloSeccion("3. Solución (Estado Cerrado)"));
-            widgets.add(_buildEstadoCerradoTable(descSolucion, fechaCierreTexto, imagenFotoCerrado));
+            widgets.add(
+              _buildEstadoCerradoTable(
+                descSolucion,
+                fechaCierreTexto,
+                imagenFotoCerrado,
+              ),
+            );
           }
 
           // ── Firmas ──
           widgets.add(pw.SizedBox(height: 14));
-          widgets.add(_tituloSeccion(esCerrado ? "Firmas — Apertura" : "Firmas"));
-          widgets.add(_buildFirmas(inspector, nombreClienteAbierto, imagenFirmaInspector, imagenFirmaClienteAb));
+          widgets.add(_tituloSeccion(esCerrado ? "Firmas Apertura" : "Firmas"));
+          widgets.add(
+            _buildFirmas(
+              inspector,
+              nombreClienteAbierto,
+              imagenFirmaInspector,
+              imagenFirmaClienteAb,
+            ),
+          );
 
           if (esCerrado) {
             widgets.add(pw.SizedBox(height: 10));
-            widgets.add(_tituloSeccion("Firmas — Cierre"));
-            widgets.add(_buildFirmas(inspector, nombreClienteCerrado, imagenFirmaInspector, imagenFirmaClienteCe));
+            widgets.add(_tituloSeccion("Firmas Cierre"));
+            widgets.add(
+              _buildFirmas(
+                inspector,
+                nombreClienteCerrado,
+                imagenFirmaInspector,
+                imagenFirmaClienteCe,
+              ),
+            );
           }
 
           return widgets;
@@ -233,12 +304,19 @@ class PdfService {
     );
 
     final Uint8List bytes = await pdf.save();
-    return (bytes: bytes, nombre: "Reporte_$nombreCaso.pdf", advertencias: advertencias);
+    return (
+      bytes: bytes,
+      nombre: "Reporte_$nombreCaso.pdf",
+      advertencias: advertencias,
+    );
   }
 
   /// Abre el visor de impresión/PDF nativo del dispositivo.
   /// Retorna lista de advertencias (fotos/firmas que no se pudieron cargar).
-  static Future<List<String>> generarReportePDF(Case? caso, Map<String, dynamic> data) async {
+  static Future<List<String>> generarReportePDF(
+    Case? caso,
+    Map<String, dynamic> data,
+  ) async {
     final result = await buildPdfBytes(caso, data);
     await Printing.layoutPdf(
       onLayout: (_) async => result.bytes,
@@ -249,19 +327,20 @@ class PdfService {
 
   /// Abre el menú nativo de compartir (WhatsApp, correo, Drive, etc.).
   /// Retorna lista de advertencias (fotos/firmas que no se pudieron cargar).
-  static Future<List<String>> compartirReportePDF(Case? caso, Map<String, dynamic> data) async {
+  static Future<List<String>> compartirReportePDF(
+    Case? caso,
+    Map<String, dynamic> data,
+  ) async {
     final result = await buildPdfBytes(caso, data);
-    await Printing.sharePdf(
-      bytes: result.bytes,
-      filename: result.nombre,
-    );
+    await Printing.sharePdf(bytes: result.bytes, filename: result.nombre);
     return result.advertencias;
   }
 
   // ── Helpers de carga de recursos (usados en paralelo desde buildPdfBytes) ──
 
   static Future<pw.MemoryImage?> _cargarImagenHallazgo(
-      Map<String, dynamic> estadoAbierto) async {
+    Map<String, dynamic> estadoAbierto,
+  ) async {
     final bytes = await _descargarImagen(estadoAbierto['fotoUrl'] as String?);
     return bytes != null ? pw.MemoryImage(bytes) : null;
   }
@@ -270,7 +349,9 @@ class PdfService {
     if (grupoId == null) return null;
     try {
       final doc = await FirebaseFirestore.instance
-          .collection('grupos').doc(grupoId).get();
+          .collection('grupos')
+          .doc(grupoId)
+          .get();
       final bytes = await _descargarImagen(doc.data()?['logoUrl'] as String?);
       return bytes != null ? pw.MemoryImage(bytes) : null;
     } catch (_) {
@@ -278,11 +359,15 @@ class PdfService {
     }
   }
 
-  static Future<pw.MemoryImage?> _cargarFirmaInspector(String? creadoPor) async {
+  static Future<pw.MemoryImage?> _cargarFirmaInspector(
+    String? creadoPor,
+  ) async {
     if (creadoPor == null) return null;
     try {
       final doc = await FirebaseFirestore.instance
-          .collection('users').doc(creadoPor).get();
+          .collection('users')
+          .doc(creadoPor)
+          .get();
       final bytes = await _descargarImagen(doc.data()?['firmaUrl'] as String?);
       return bytes != null ? pw.MemoryImage(bytes) : null;
     } catch (_) {
@@ -291,14 +376,15 @@ class PdfService {
   }
 
   static Future<pw.MemoryImage?> _cargarFirmaCliente(
-      Map<String, dynamic> estado) async {
-    final bytes = await _descargarImagen(
-        estado['firmaClienteUrl'] as String?);
+    Map<String, dynamic> estado,
+  ) async {
+    final bytes = await _descargarImagen(estado['firmaClienteUrl'] as String?);
     return bytes != null ? pw.MemoryImage(bytes) : null;
   }
 
   static Future<pw.MemoryImage?> _cargarFotoCerrado(
-      Map<String, dynamic> estadoCerrado) async {
+    Map<String, dynamic> estadoCerrado,
+  ) async {
     final bytes = await _descargarImagen(estadoCerrado['fotoUrl'] as String?);
     return bytes != null ? pw.MemoryImage(bytes) : null;
   }
@@ -307,7 +393,9 @@ class PdfService {
   static Future<String?> _cargarNombreUsuario(String uid) async {
     try {
       final doc = await FirebaseFirestore.instance
-          .collection('users').doc(uid).get();
+          .collection('users')
+          .doc(uid)
+          .get();
       return doc.data()?['displayName'] as String?;
     } catch (_) {
       return null;
@@ -315,7 +403,10 @@ class PdfService {
   }
 
   static String? _obtenerValor(String? objetoVal, dynamic mapaVal) {
-    if (objetoVal != null && objetoVal.isNotEmpty && objetoVal != 'N/A' && objetoVal != 'null') {
+    if (objetoVal != null &&
+        objetoVal.isNotEmpty &&
+        objetoVal != 'N/A' &&
+        objetoVal != 'null') {
       return objetoVal;
     }
     if (mapaVal != null && mapaVal.toString().isNotEmpty) {
@@ -328,83 +419,134 @@ class PdfService {
   static pw.Widget _buildHeader([pw.MemoryImage? logo]) => pw.Table(
     border: pw.TableBorder.all(),
     columnWidths: {
-      0: const pw.FlexColumnWidth(3),   // título principal — más ancho
-      1: const pw.FlexColumnWidth(1),   // versión — estrecho
+      0: const pw.FlexColumnWidth(3), // título principal — más ancho
+      1: const pw.FlexColumnWidth(1), // versión — estrecho
       2: const pw.FixedColumnWidth(70), // logo — esquina derecha, tamaño fijo
     },
     children: [
-      pw.TableRow(children: [
-        // Col izq: título
-        pw.Container(
-          height: 60,
-          padding: const pw.EdgeInsets.all(6),
-          child: pw.Column(
-            mainAxisAlignment: pw.MainAxisAlignment.center,
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Text(
-                "REGISTRO DE INSPECCIÓN DE SEGURIDAD",
-                style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11),
-              ),
-            ],
-          ),
-        ),
-        // Col centro: versión
-        pw.Container(
-          height: 60,
-          child: pw.Center(
-            child: pw.Text("v.01", style: const pw.TextStyle(fontSize: 8)),
-          ),
-        ),
-        // Col der: logo (esquina superior derecha)
-        pw.Container(
-          height: 60,
-          padding: const pw.EdgeInsets.all(4),
-          child: logo != null
-              ? pw.Image(logo, fit: pw.BoxFit.contain)
-              : pw.Center(
-                  child: pw.Text(
-                    "LOGO",
-                    style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey),
+      pw.TableRow(
+        children: [
+          // Col izq: título
+          pw.Container(
+            height: 60,
+            padding: const pw.EdgeInsets.all(6),
+            child: pw.Column(
+              mainAxisAlignment: pw.MainAxisAlignment.center,
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(
+                  "REGISTRO DE INSPECCIÓN DE SEGURIDAD",
+                  style: pw.TextStyle(
+                    fontWeight: pw.FontWeight.bold,
+                    fontSize: 11,
                   ),
                 ),
-        ),
-      ])
-    ]
+              ],
+            ),
+          ),
+          // Col centro: versión
+          pw.Container(
+            height: 60,
+            child: pw.Center(
+              child: pw.Text("v.01", style: const pw.TextStyle(fontSize: 8)),
+            ),
+          ),
+          // Col der: logo (esquina superior derecha)
+          pw.Container(
+            height: 60,
+            padding: const pw.EdgeInsets.all(4),
+            child: logo != null
+                ? pw.Image(logo, fit: pw.BoxFit.contain)
+                : pw.Center(
+                    child: pw.Text(
+                      "LOGO",
+                      style: const pw.TextStyle(
+                        fontSize: 7,
+                        color: PdfColors.grey,
+                      ),
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    ],
   );
 
-  static pw.Widget _buildInfoTable(String e, String f, String h, String c, String i) => pw.Table(
+  static pw.Widget _buildInfoTable(
+    String e,
+    String f,
+    String h,
+    String c,
+    String i,
+  ) => pw.Table(
     border: pw.TableBorder.all(),
     children: [
       _filaInfo("Empresa", e, "Fecha", f),
-      _filaInfo("Centro",  c, "Hora",  h),
+      _filaInfo("Centro", c, "Hora", h),
       _filaInfo("Inspector", i, "", ""),
-    ]
+    ],
   );
 
-  static pw.Widget _buildDataTable(String n, String cat, String tip, String ubi, String desc, String niv, String con, pw.MemoryImage? img) => pw.Table(
+  static pw.Widget _buildDataTable(
+    String n,
+    String cat,
+    String tip,
+    String ubi,
+    String desc,
+    String niv,
+    String con,
+    pw.MemoryImage? img,
+  ) => pw.Table(
     border: pw.TableBorder.all(),
-    columnWidths: {4: const pw.FlexColumnWidth(2), 7: const pw.FixedColumnWidth(100)},
+    columnWidths: {
+      4: const pw.FlexColumnWidth(2),
+      7: const pw.FixedColumnWidth(100),
+    },
     children: [
       pw.TableRow(
         decoration: const pw.BoxDecoration(color: PdfColors.grey200),
-        children: ["Caso", "Categoría", "Tipo", "Ubicación", "Descripción", "Riesgo", "Control", "Evidencia"]
-            .map((t) => _celdaHeader(t)).toList(),
+        children: [
+          "Caso",
+          "Categoría",
+          "Tipo",
+          "Ubicación",
+          "Descripción",
+          "Riesgo",
+          "Control",
+          "Evidencia",
+        ].map((t) => _celdaHeader(t)).toList(),
       ),
       pw.TableRow(
         children: [
-          _celdaData(n), _celdaData(cat), _celdaData(tip), _celdaData(ubi),
-          _celdaData(desc), _celdaData(niv), _celdaData(con),
-          pw.Container(height: 80, child: img != null
-              ? pw.Image(img)
-              : pw.Center(child: pw.Text("Sin foto", style: const pw.TextStyle(fontSize: 6)))),
+          _celdaData(n),
+          _celdaData(cat),
+          _celdaData(tip),
+          _celdaData(ubi),
+          _celdaData(desc),
+          _celdaData(niv),
+          _celdaData(con),
+          pw.Container(
+            height: 80,
+            child: img != null
+                ? pw.Image(img)
+                : pw.Center(
+                    child: pw.Text(
+                      "Sin foto",
+                      style: const pw.TextStyle(fontSize: 6),
+                    ),
+                  ),
+          ),
         ],
       ),
-    ]
+    ],
   );
 
   // ── Sección Estado Cerrado ─────────────────────────────────────────────
-  static pw.Widget _buildEstadoCerradoTable(String descSolucion, String fechaCierre, pw.MemoryImage? fotoCerrado) => pw.Table(
+  static pw.Widget _buildEstadoCerradoTable(
+    String descSolucion,
+    String fechaCierre,
+    pw.MemoryImage? fotoCerrado,
+  ) => pw.Table(
     border: pw.TableBorder.all(),
     columnWidths: {
       0: const pw.FlexColumnWidth(3),
@@ -424,9 +566,17 @@ class PdfService {
         children: [
           _celdaData(descSolucion),
           _celdaData(fechaCierre),
-          pw.Container(height: 80, child: fotoCerrado != null
-              ? pw.Image(fotoCerrado, fit: pw.BoxFit.contain)
-              : pw.Center(child: pw.Text("Sin foto", style: const pw.TextStyle(fontSize: 6)))),
+          pw.Container(
+            height: 80,
+            child: fotoCerrado != null
+                ? pw.Image(fotoCerrado, fit: pw.BoxFit.contain)
+                : pw.Center(
+                    child: pw.Text(
+                      "Sin foto",
+                      style: const pw.TextStyle(fontSize: 6),
+                    ),
+                  ),
+          ),
         ],
       ),
     ],
@@ -434,17 +584,32 @@ class PdfService {
 
   static pw.Widget _tituloSeccion(String t) => pw.Padding(
     padding: const pw.EdgeInsets.symmetric(vertical: 5),
-    child: pw.Text(t, style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9)),
+    child: pw.Text(
+      t,
+      style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9),
+    ),
   );
 
-  static pw.TableRow _filaInfo(String l1, String v1, String l2, String v2) => pw.TableRow(children: [
-    pw.Padding(padding: const pw.EdgeInsets.all(4), child: pw.Text("$l1: $v1", style: const pw.TextStyle(fontSize: 8))),
-    pw.Padding(padding: const pw.EdgeInsets.all(4), child: pw.Text("$l2: $v2", style: const pw.TextStyle(fontSize: 8))),
-  ]);
+  static pw.TableRow _filaInfo(String l1, String v1, String l2, String v2) =>
+      pw.TableRow(
+        children: [
+          pw.Padding(
+            padding: const pw.EdgeInsets.all(4),
+            child: pw.Text("$l1: $v1", style: const pw.TextStyle(fontSize: 8)),
+          ),
+          pw.Padding(
+            padding: const pw.EdgeInsets.all(4),
+            child: pw.Text("$l2: $v2", style: const pw.TextStyle(fontSize: 8)),
+          ),
+        ],
+      );
 
   static pw.Widget _celdaHeader(String t) => pw.Padding(
     padding: const pw.EdgeInsets.all(3),
-    child: pw.Text(t, style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 7)),
+    child: pw.Text(
+      t,
+      style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 7),
+    ),
   );
 
   static pw.Widget _celdaData(String t) => pw.Padding(
@@ -453,9 +618,12 @@ class PdfService {
   );
 
   // ── Sección de firmas al pie del reporte ─────────────────────────────────
-  static pw.Widget _buildFirmas(String inspectorNombre, String centroNombre,
-      [pw.MemoryImage? firmaInspector, pw.MemoryImage? firmaCliente]) =>
-      pw.Table(
+  static pw.Widget _buildFirmas(
+    String inspectorNombre,
+    String centroNombre, [
+    pw.MemoryImage? firmaInspector,
+    pw.MemoryImage? firmaCliente,
+  ]) => pw.Table(
     border: pw.TableBorder.all(),
     columnWidths: {
       0: const pw.FlexColumnWidth(1),
@@ -485,45 +653,49 @@ class PdfService {
         ],
       ),
       // Fila imágenes de firma
-      pw.TableRow(children: [
-        pw.Container(
-          height: 50,
-          padding: const pw.EdgeInsets.all(4),
-          child: pw.Center(
-            child: firmaInspector != null
-                ? pw.Image(firmaInspector, fit: pw.BoxFit.contain)
-                : pw.SizedBox(),
+      pw.TableRow(
+        children: [
+          pw.Container(
+            height: 50,
+            padding: const pw.EdgeInsets.all(4),
+            child: pw.Center(
+              child: firmaInspector != null
+                  ? pw.Image(firmaInspector, fit: pw.BoxFit.contain)
+                  : pw.SizedBox(),
+            ),
           ),
-        ),
-        pw.Container(
-          height: 50,
-          padding: const pw.EdgeInsets.all(4),
-          child: pw.Center(
-            child: firmaCliente != null
-                ? pw.Image(firmaCliente, fit: pw.BoxFit.contain)
-                : pw.SizedBox(),
+          pw.Container(
+            height: 50,
+            padding: const pw.EdgeInsets.all(4),
+            child: pw.Center(
+              child: firmaCliente != null
+                  ? pw.Image(firmaCliente, fit: pw.BoxFit.contain)
+                  : pw.SizedBox(),
+            ),
           ),
-        ),
-      ]),
+        ],
+      ),
       // Fila nombre
-      pw.TableRow(children: [
-        pw.Padding(
-          padding: const pw.EdgeInsets.all(4),
-          child: pw.Text(
-            inspectorNombre,
-            style: const pw.TextStyle(fontSize: 8),
-            textAlign: pw.TextAlign.center,
+      pw.TableRow(
+        children: [
+          pw.Padding(
+            padding: const pw.EdgeInsets.all(4),
+            child: pw.Text(
+              inspectorNombre,
+              style: const pw.TextStyle(fontSize: 8),
+              textAlign: pw.TextAlign.center,
+            ),
           ),
-        ),
-        pw.Padding(
-          padding: const pw.EdgeInsets.all(4),
-          child: pw.Text(
-            centroNombre,
-            style: const pw.TextStyle(fontSize: 8),
-            textAlign: pw.TextAlign.center,
+          pw.Padding(
+            padding: const pw.EdgeInsets.all(4),
+            child: pw.Text(
+              centroNombre,
+              style: const pw.TextStyle(fontSize: 8),
+              textAlign: pw.TextAlign.center,
+            ),
           ),
-        ),
-      ]),
+        ],
+      ),
     ],
   );
 }

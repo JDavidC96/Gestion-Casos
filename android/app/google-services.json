@@ -12,7 +12,28 @@
           "package_name": "com.covaret.gestion_casos"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "943671978858-hukiuf1u8ltcdtvk6d91kki19hk3cj60.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.covaret.gestion_casos",
+            "certificate_hash": "3c98b60c2a795709787471e2818d109459b2145e"
+          }
+        },
+        {
+          "client_id": "943671978858-v5v828obqiqj96b921r8d8fja03km64s.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.covaret.gestion_casos",
+            "certificate_hash": "a6e48f81f87b8d85fd8f76dcca49ae1e0bfa37b3"
+          }
+        },
+        {
+          "client_id": "943671978858-rgoagf5r6g56st7f8kpgcuv2mo2lv94p.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyDXlnIS5xuMJUDuLAU2muZuSGOH4BoFMls"
@@ -20,7 +41,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "943671978858-rgoagf5r6g56st7f8kpgcuv2mo2lv94p.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "943671978858-o7nce0sj716o9ilfm2n03b0499m2bepg.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.gestionCasos"
+              }
+            }
+          ]
         }
       }
     }

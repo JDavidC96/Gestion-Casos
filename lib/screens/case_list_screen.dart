@@ -18,6 +18,7 @@ import '../widgets/configurable_feature.dart';
 import '../services/report_service.dart';
 import '../services/offline_case_service.dart';
 import '../services/sync_service.dart';
+import '../services/license_cache_service.dart';
 import '../providers/connectivity_provider.dart';
 import 'dart:async';
 
@@ -36,7 +37,7 @@ class _CaseListScreenState extends State<CaseListScreen> {
     nit: "",
     icon: Icons.business,
   );
-  String _grupoId   = "";
+  String _grupoId = "";
   String _empresaId = "empresa_default";
   String? _centroId;
   String? _centroNombre;
@@ -93,10 +94,10 @@ class _CaseListScreenState extends State<CaseListScreen> {
 
   void _initializeEmpresaFromArguments() {
     final args = ModalRoute.of(context)!.settings.arguments as Map?;
-    
+
     if (args != null) {
       setState(() {
-        _grupoId   = args["grupoId"] ?? "";
+        _grupoId = args["grupoId"] ?? "";
         _empresaId = args["empresaId"] ?? "empresa_default";
         _empresa = Empresa(
           id: _empresaId,
@@ -115,10 +116,14 @@ class _CaseListScreenState extends State<CaseListScreen> {
   // Método simplificado: solo cargar configuración sin setState
   void _loadInterfaceConfig() {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final configProvider = Provider.of<InterfaceConfigProvider>(context, listen: false);
-    
+    final configProvider = Provider.of<InterfaceConfigProvider>(
+      context,
+      listen: false,
+    );
+
     if (authProvider.grupoId != null) {
-      if (authProvider.grupoId != null) configProvider.loadConfig(authProvider.grupoId!);
+      if (authProvider.grupoId != null)
+        configProvider.loadConfig(authProvider.grupoId!);
     }
   }
 
@@ -134,15 +139,15 @@ class _CaseListScreenState extends State<CaseListScreen> {
   // Método para verificar permisos de creación de casos
   bool _puedeCrearCasos(AuthProvider authProvider) {
     // Admin puede crear casos en su grupo, super_admin en todos, inspectores según configuración
-    return authProvider.isAdmin || 
-           authProvider.isSuperAdmin || 
-           (authProvider.isAnyInspector && 
+    return authProvider.isAdmin ||
+        authProvider.isSuperAdmin ||
+        (authProvider.isAnyInspector &&
             authProvider.puedeAccederAEmpresa(_empresaId));
   }
 
-  void _openAddCaseModal() {
+  void _openAddCaseModal() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    
+
     // Verificar permisos actualizados
     if (!_puedeCrearCasos(authProvider)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -153,6 +158,46 @@ class _CaseListScreenState extends State<CaseListScreen> {
       );
       return;
     }
+
+    // ── GATE DE LICENCIA ──────────────────────────────────────────────────
+    // SuperAdmin (tú) se salta el gate completo para soporte y debug.
+    // Cualquier otro rol debe pasar la validación local de licencia.
+    if (!authProvider.isSuperAdmin) {
+      final grupoIdEfectivo = authProvider.grupoId ?? _grupoId;
+
+      // Si hay conexión, refrescamos el caché ANTES de validar para que
+      // un cambio reciente (ej. el admin acaba de pagar) se vea de inmediato.
+      final connectivityProvider = Provider.of<ConnectivityProvider>(
+        context,
+        listen: false,
+      );
+      if (connectivityProvider.isOnline && grupoIdEfectivo.isNotEmpty) {
+        await LicenseCacheService.instance.refresh(grupoIdEfectivo);
+        if (!mounted) return;
+      }
+
+      final check = LicenseCacheService.instance.puedeOperarLocal(
+        grupoIdEfectivo,
+      );
+      if (!check.permitido) {
+        await showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            icon: const Icon(Icons.lock_outline, color: Colors.red, size: 48),
+            title: Text(check.titulo),
+            content: Text(check.mensajeUsuario),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Entendido'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+    }
+    // ──────────────────────────────────────────────────────────────────────
 
     showDialog(
       context: context,
@@ -236,7 +281,10 @@ class _CaseListScreenState extends State<CaseListScreen> {
               Navigator.pop(context);
               try {
                 await FirebaseService.updateCaso(
-                  _grupoId, _empresaId, _centroId ?? '', casoId,
+                  _grupoId,
+                  _empresaId,
+                  _centroId ?? '',
+                  casoId,
                   {'nombre': nuevoNombre},
                 );
                 if (mounted) {
@@ -268,8 +316,7 @@ class _CaseListScreenState extends State<CaseListScreen> {
 
   // ─── Eliminar caso ──────────────────────────────────────────────────────
 
-  Future<void> _confirmarEliminarCaso(
-      String casoId, String nombreCaso) async {
+  Future<void> _confirmarEliminarCaso(String casoId, String nombreCaso) async {
     final confirmar = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -292,8 +339,10 @@ class _CaseListScreenState extends State<CaseListScreen> {
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Eliminar',
-                style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'Eliminar',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -302,7 +351,11 @@ class _CaseListScreenState extends State<CaseListScreen> {
     if (confirmar == true && mounted) {
       try {
         await FirebaseService.deleteCaso(
-            _grupoId, _empresaId, _centroId ?? '', casoId);
+          _grupoId,
+          _empresaId,
+          _centroId ?? '',
+          casoId,
+        );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -329,11 +382,11 @@ class _CaseListScreenState extends State<CaseListScreen> {
       context,
       '/caseDetail',
       arguments: {
-        "grupoId":   _grupoId,
+        "grupoId": _grupoId,
         "empresaId": _empresaId,
-        "centroId":  _centroId,
-        "casoId":    casoId,
-        "caso":      caso,
+        "centroId": _centroId,
+        "casoId": casoId,
+        "caso": caso,
       },
     );
   }
@@ -353,9 +406,12 @@ class _CaseListScreenState extends State<CaseListScreen> {
   }
 
   // Método para obtener el color del nivel de riesgo según la configuración
-  Color? _getNivelRiesgoColor(Case caso, InterfaceConfigProvider configProvider) {
+  Color? _getNivelRiesgoColor(
+    Case caso,
+    InterfaceConfigProvider configProvider,
+  ) {
     if (!configProvider.isFeatureEnabled('mostrarNivelRiesgo')) return null;
-    
+
     switch (caso.nivelPeligro) {
       case 'Bajo':
         return Colors.green;
@@ -368,188 +424,215 @@ class _CaseListScreenState extends State<CaseListScreen> {
     }
   }
 
-    // En case_list_screen.dart, dentro de _CaseListScreenState
+  // En case_list_screen.dart, dentro de _CaseListScreenState
 
-void _mostrarDialogoReporteDiario() {
-  // Variables que mantendrán el estado fuera del StatefulBuilder
-  DateTime fechaSeleccionada = DateTime.now();
-  String? supervisorSeleccionado;
-  bool incluirCerrados = true;
-  bool isLoading = false;
-  
-  showDialog(
-    context: context,
-    builder: (context) {
-      return StatefulBuilder(
-        builder: (context, setDialogState) {
-          return AlertDialog(
-            title: const Text('Generar Reporte Diario'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Selector de fecha
-                  ListTile(
-                    title: const Text('Fecha'),
-                    subtitle: Text(DateFormat('dd/MM/yyyy').format(fechaSeleccionada)),
-                    trailing: const Icon(Icons.calendar_today),
-                    onTap: () async {
-                      final DateTime? picked = await showDatePicker(
-                        context: context,
-                        initialDate: fechaSeleccionada, // Usar la fecha seleccionada actual
-                        firstDate: DateTime(2020),
-                        lastDate: DateTime.now(),
-                      );
-                      if (picked != null && picked != fechaSeleccionada) {
-                        // Actualizar la variable y el diálogo
-                        fechaSeleccionada = picked;
-                        setDialogState(() {}); // Forzar rebuild del diálogo
-                      }
-                    },
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  // Selector de supervisor
-                  FutureBuilder<List<String>>(
-                    future: _obtenerSupervisores(),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-                      
-                      if (snapshot.hasData) {
-                        final supervisores = snapshot.data!;
-                        return DropdownButtonFormField<String>(
-                          decoration: const InputDecoration(
-                            labelText: 'Supervisor (opcional)',
-                            border: OutlineInputBorder(),
-                          ),
-                          value: supervisorSeleccionado,
-                          items: [
-                            const DropdownMenuItem<String>(
-                              value: null,
-                              child: Text('Todos los supervisores'),
+  void _mostrarDialogoReporteDiario() {
+    // Variables que mantendrán el estado fuera del StatefulBuilder
+    DateTime fechaSeleccionada = DateTime.now();
+    String? supervisorSeleccionado;
+    bool incluirCerrados = true;
+    bool isLoading = false;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Generar Reporte Diario'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Selector de fecha
+                    ListTile(
+                      title: const Text('Fecha'),
+                      subtitle: Text(
+                        DateFormat('dd/MM/yyyy').format(fechaSeleccionada),
+                      ),
+                      trailing: const Icon(Icons.calendar_today),
+                      onTap: () async {
+                        final DateTime? picked = await showDatePicker(
+                          context: context,
+                          initialDate:
+                              fechaSeleccionada, // Usar la fecha seleccionada actual
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime.now(),
+                        );
+                        if (picked != null && picked != fechaSeleccionada) {
+                          // Actualizar la variable y el diálogo
+                          fechaSeleccionada = picked;
+                          setDialogState(() {}); // Forzar rebuild del diálogo
+                        }
+                      },
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // Selector de supervisor
+                    FutureBuilder<List<String>>(
+                      future: _obtenerSupervisores(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+
+                        if (snapshot.hasData) {
+                          final supervisores = snapshot.data!;
+                          return DropdownButtonFormField<String>(
+                            decoration: const InputDecoration(
+                              labelText: 'Supervisor (opcional)',
+                              border: OutlineInputBorder(),
                             ),
-                            ...supervisores.map((s) => DropdownMenuItem<String>(
-                              value: s,
-                              child: Text(s),
-                            )),
-                          ],
-                          onChanged: (value) {
-                            supervisorSeleccionado = value;
-                            setDialogState(() {}); // Forzar rebuild
-                          },
+                            value: supervisorSeleccionado,
+                            items: [
+                              const DropdownMenuItem<String>(
+                                value: null,
+                                child: Text('Todos los supervisores'),
+                              ),
+                              ...supervisores.map(
+                                (s) => DropdownMenuItem<String>(
+                                  value: s,
+                                  child: Text(s),
+                                ),
+                              ),
+                            ],
+                            onChanged: (value) {
+                              supervisorSeleccionado = value;
+                              setDialogState(() {}); // Forzar rebuild
+                            },
+                          );
+                        }
+
+                        return const Text('Error cargando supervisores');
+                      },
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // Checkbox para incluir cerrados
+                    CheckboxListTile(
+                      title: const Text('Incluir casos cerrados'),
+                      value: incluirCerrados,
+                      onChanged: (value) {
+                        incluirCerrados = value ?? true;
+                        setDialogState(() {}); // Forzar rebuild
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancelar'),
+                ),
+                // Helper local para obtener los docs del reporte diario
+                ...(() {
+                  Future<void> ejecutar({required bool compartir}) async {
+                    setDialogState(() => isLoading = true);
+                    try {
+                      final casosDocs =
+                          await FirebaseService.getCasosDocsParaReporte(
+                            _grupoId,
+                            _empresaId,
+                          );
+                      Navigator.pop(context);
+                      if (compartir) {
+                        await ReportService.compartirReporteCasosPDF(
+                          casos: casosDocs,
+                          fecha: fechaSeleccionada,
+                          supervisor: supervisorSeleccionado,
+                          incluirCerrados: incluirCerrados,
+                          empresaNombre: _empresa.nombre,
+                          centroNombre: _centroNombre,
+                          grupoId: _grupoId,
+                        );
+                      } else {
+                        await ReportService.generarReporteCasosPDF(
+                          casos: casosDocs,
+                          fecha: fechaSeleccionada,
+                          supervisor: supervisorSeleccionado,
+                          incluirCerrados: incluirCerrados,
+                          empresaNombre: _empresa.nombre,
+                          centroNombre: _centroNombre,
+                          grupoId: _grupoId,
                         );
                       }
-                      
-                      return const Text('Error cargando supervisores');
-                    },
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  // Checkbox para incluir cerrados
-                  CheckboxListTile(
-                    title: const Text('Incluir casos cerrados'),
-                    value: incluirCerrados,
-                    onChanged: (value) {
-                      incluirCerrados = value ?? true;
-                      setDialogState(() {}); // Forzar rebuild
-                    },
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancelar'),
-              ),
-              // Helper local para obtener los docs del reporte diario
-              ...(() {
-                Future<void> ejecutar({required bool compartir}) async {
-                  setDialogState(() => isLoading = true);
-                  try {
-                    final casosDocs = await FirebaseService.getCasosDocsParaReporte(
-                      _grupoId, _empresaId);
-                    Navigator.pop(context);
-                    if (compartir) {
-                      await ReportService.compartirReporteCasosPDF(
-                        casos: casosDocs,
-                        fecha: fechaSeleccionada,
-                        supervisor: supervisorSeleccionado,
-                        incluirCerrados: incluirCerrados,
-                        empresaNombre: _empresa.nombre,
-                        centroNombre: _centroNombre,
-                        grupoId: _grupoId,
-                      );
-                    } else {
-                      await ReportService.generarReporteCasosPDF(
-                        casos: casosDocs,
-                        fecha: fechaSeleccionada,
-                        supervisor: supervisorSeleccionado,
-                        incluirCerrados: incluirCerrados,
-                        empresaNombre: _empresa.nombre,
-                        centroNombre: _centroNombre,
-                        grupoId: _grupoId,
-                      );
-                    }
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(compartir
-                              ? '✅ PDF listo para compartir'
-                              : '✅ Reporte generado exitosamente'),
-                          backgroundColor: Colors.green,
-                        ),
-                      );
-                    }
-                  } catch (e) {
-                    if (Navigator.canPop(context)) Navigator.pop(context);
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-                      );
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              compartir
+                                  ? '✅ PDF listo para compartir'
+                                  : '✅ Reporte generado exitosamente',
+                            ),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (Navigator.canPop(context)) Navigator.pop(context);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Error: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
                     }
                   }
-                }
 
-                return [
-                  ElevatedButton.icon(
-                    onPressed: isLoading ? null : () => ejecutar(compartir: false),
-                    icon: isLoading
-                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.picture_as_pdf, size: 18),
-                    label: const Text('Ver PDF'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red.shade700,
-                      foregroundColor: Colors.white,
+                  return [
+                    ElevatedButton.icon(
+                      onPressed: isLoading
+                          ? null
+                          : () => ejecutar(compartir: false),
+                      icon: isLoading
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.picture_as_pdf, size: 18),
+                      label: const Text('Ver PDF'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red.shade700,
+                        foregroundColor: Colors.white,
+                      ),
                     ),
-                  ),
-                  ElevatedButton.icon(
-                    onPressed: isLoading ? null : () => ejecutar(compartir: true),
-                    icon: const Icon(Icons.share, size: 18),
-                    label: const Text('Compartir'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green.shade700,
-                      foregroundColor: Colors.white,
+                    ElevatedButton.icon(
+                      onPressed: isLoading
+                          ? null
+                          : () => ejecutar(compartir: true),
+                      icon: const Icon(Icons.share, size: 18),
+                      label: const Text('Compartir'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green.shade700,
+                        foregroundColor: Colors.white,
+                      ),
                     ),
-                  ),
-                ];
-              })(),
-            ],
-          );
-        },
-      );
-    },
-  );
-}
+                  ];
+                })(),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
 
   // NUEVO MÉTODO 2 - Obtener supervisores
   Future<List<String>> _obtenerSupervisores() async {
     try {
-      final casos = await FirebaseService.getCasosPorEmpresa(_grupoId, _empresaId);
+      final casos = await FirebaseService.getCasosPorEmpresa(
+        _grupoId,
+        _empresaId,
+      );
       final supervisores = <String>{};
       for (final data in casos) {
         final estadoAbierto = data['estadoAbierto'] as Map<String, dynamic>?;
@@ -565,10 +648,13 @@ void _mostrarDialogoReporteDiario() {
   }
 
   // Método para determinar si mostrar el nivel de riesgo
-  bool _debeMostrarNivelRiesgo(Case caso, InterfaceConfigProvider configProvider) {
-    return configProvider.isFeatureEnabled('mostrarNivelRiesgo') && 
-           caso.nivelPeligro.isNotEmpty && 
-           caso.nivelPeligro != 'No aplica';
+  bool _debeMostrarNivelRiesgo(
+    Case caso,
+    InterfaceConfigProvider configProvider,
+  ) {
+    return configProvider.isFeatureEnabled('mostrarNivelRiesgo') &&
+        caso.nivelPeligro.isNotEmpty &&
+        caso.nivelPeligro != 'No aplica';
   }
 
   @override
@@ -607,26 +693,44 @@ void _mostrarDialogoReporteDiario() {
                 child: Container(
                   width: double.infinity,
                   color: Colors.orange.shade700,
-                  padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 12),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 5,
+                    horizontal: 12,
+                  ),
                   child: Row(
                     children: [
-                      const Icon(Icons.cloud_off, size: 14, color: Colors.white),
+                      const Icon(
+                        Icons.cloud_off,
+                        size: 14,
+                        color: Colors.white,
+                      ),
                       const SizedBox(width: 6),
                       const Text(
                         'Sin conexión — mostrando datos locales',
-                        style: TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w500),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                       if (connectivityProvider.hasPending) ...[
                         const Spacer(),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 1,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.white24,
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
                             '${connectivityProvider.pendingCount} pendiente${connectivityProvider.pendingCount != 1 ? 's' : ''}',
-                            style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold),
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ],
@@ -635,34 +739,45 @@ void _mostrarDialogoReporteDiario() {
                 ),
               )
             : connectivityProvider.hasPending
-                ? PreferredSize(
-                    preferredSize: const Size.fromHeight(28),
-                    child: Container(
-                      width: double.infinity,
-                      color: Colors.blue.shade600,
-                      padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 12),
-                      child: Row(
-                        children: [
-                          const SizedBox(
-                            width: 12,
-                            height: 12,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Sincronizando ${connectivityProvider.pendingCount} caso${connectivityProvider.pendingCount != 1 ? 's' : ''}...',
-                            style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w500),
-                          ),
-                        ],
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(28),
+                child: Container(
+                  width: double.infinity,
+                  color: Colors.blue.shade600,
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 5,
+                    horizontal: 12,
+                  ),
+                  child: Row(
+                    children: [
+                      const SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
                       ),
-                    ),
-                  )
-                : null,
+                      const SizedBox(width: 8),
+                      Text(
+                        'Sincronizando ${connectivityProvider.pendingCount} caso${connectivityProvider.pendingCount != 1 ? 's' : ''}...',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            : null,
         actions: [
-          IconButton(onPressed: _mostrarDialogoReporteDiario,
-           icon: const Icon(Icons.picture_as_pdf),
-           tooltip: 'Generar Reporte Diario',
-           ),
+          IconButton(
+            onPressed: _mostrarDialogoReporteDiario,
+            icon: const Icon(Icons.picture_as_pdf),
+            tooltip: 'Generar Reporte Diario',
+          ),
 
           // Información del grupo
           if (authProvider.grupoNombre != null)
@@ -679,16 +794,18 @@ void _mostrarDialogoReporteDiario() {
           ConfigurableFeature(
             feature: 'mostrarCasosCerrados',
             child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseService.getCasosPorEmpresaStream(_grupoId, _empresaId, _centroId ?? ''),
+              stream: FirebaseService.getCasosPorEmpresaStream(
+                _grupoId,
+                _empresaId,
+                _centroId ?? '',
+              ),
               builder: (context, snapshot) {
                 if (!snapshot.hasData) return const SizedBox.shrink();
-                
-                final casosCerrados = snapshot.data!.docs
-                    .where((doc) {
-                      final data = doc.data() as Map<String, dynamic>;
-                      return data['cerrado'] == true;
-                    })
-                    .length;
+
+                final casosCerrados = snapshot.data!.docs.where((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  return data['cerrado'] == true;
+                }).length;
 
                 if (casosCerrados == 0) return const SizedBox.shrink();
 
@@ -710,13 +827,17 @@ void _mostrarDialogoReporteDiario() {
                             tipoRiesgo: data['tipoRiesgo'] ?? '',
                             descripcionRiesgo: data['descripcionRiesgo'] ?? '',
                             nivelPeligro: _getNivelPeligroActualizado(data),
-                            fechaCreacion: (data['fechaCreacion'] as Timestamp?)?.toDate() ?? DateTime.now(),
-                            fechaCierre: (data['fechaCierre'] as Timestamp?)?.toDate(),
+                            fechaCreacion:
+                                (data['fechaCreacion'] as Timestamp?)
+                                    ?.toDate() ??
+                                DateTime.now(),
+                            fechaCierre: (data['fechaCierre'] as Timestamp?)
+                                ?.toDate(),
                             cerrado: data['cerrado'] ?? false,
                           );
                         })
                         .toList();
-                    
+
                     _navegarACasosCerrados(casosCerradosList);
                   },
                 );
@@ -735,10 +856,13 @@ void _mostrarDialogoReporteDiario() {
         ),
         child: StreamBuilder<QuerySnapshot>(
           stream: connectivityProvider.isOnline
-              ? FirebaseService.getCasosPorEmpresaStream(_grupoId, _empresaId, _centroId ?? '')
+              ? FirebaseService.getCasosPorEmpresaStream(
+                  _grupoId,
+                  _empresaId,
+                  _centroId ?? '',
+                )
               : const Stream.empty(),
           builder: (context, snapshot) {
-
             // ── Guardar caché cada vez que llegan datos frescos de Firestore ─
             if (connectivityProvider.isOnline &&
                 snapshot.hasData &&
@@ -755,15 +879,18 @@ void _mostrarDialogoReporteDiario() {
                     return {...data, 'id': doc.id};
                   })
                   .toList();
-              OfflineCaseService.instance
-                  .saveFirestoreCache(cacheKey, casosParaCache);
+              OfflineCaseService.instance.saveFirestoreCache(
+                cacheKey,
+                casosParaCache,
+              );
             }
 
             // ── Sin red: offline pendientes + caché Firestore ─────────────
             if (!connectivityProvider.isOnline) {
               final cacheKey = '${_grupoId}_${_empresaId}_${_centroId ?? ""}';
-              final cachedCasos =
-                  OfflineCaseService.instance.getFirestoreCache(cacheKey);
+              final cachedCasos = OfflineCaseService.instance.getFirestoreCache(
+                cacheKey,
+              );
 
               final totalItems = _casosOffline.length + cachedCasos.length;
 
@@ -805,10 +932,14 @@ void _mostrarDialogoReporteDiario() {
                   return CaseCard(
                     caso: caso,
                     onTap: () => _navegarADetalleCaso(casoId, caso),
-                    mostrarNivelRiesgo:
-                        _debeMostrarNivelRiesgo(caso, configProvider),
-                    nivelRiesgoColor:
-                        _getNivelRiesgoColor(caso, configProvider),
+                    mostrarNivelRiesgo: _debeMostrarNivelRiesgo(
+                      caso,
+                      configProvider,
+                    ),
+                    nivelRiesgoColor: _getNivelRiesgoColor(
+                      caso,
+                      configProvider,
+                    ),
                     mostrarMenu: false,
                   );
                 },
@@ -841,7 +972,12 @@ void _mostrarDialogoReporteDiario() {
             }
 
             if (!snapshot.hasData) {
-              return const Center(child: Text('No hay datos', style: TextStyle(color: Colors.white)));
+              return const Center(
+                child: Text(
+                  'No hay datos',
+                  style: TextStyle(color: Colors.white),
+                ),
+              );
             }
 
             // Filtrar casos por grupo
@@ -861,18 +997,22 @@ void _mostrarDialogoReporteDiario() {
               if (!cerrado) {
                 casosAbiertos.add(doc);
               } else {
-                casosCerrados.add(Case(
-                  id: doc.id,
-                  empresaId: data['empresaId'] ?? '',
-                  empresaNombre: data['empresaNombre'] ?? '',
-                  nombre: data['nombre'] ?? '',
-                  tipoRiesgo: data['tipoRiesgo'] ?? '',
-                  descripcionRiesgo: data['descripcionRiesgo'] ?? '',
-                  nivelPeligro: _getNivelPeligroActualizado(data),
-                  fechaCreacion: (data['fechaCreacion'] as Timestamp?)?.toDate() ?? DateTime.now(),
-                  fechaCierre: (data['fechaCierre'] as Timestamp?)?.toDate(),
-                  cerrado: true,
-                ));
+                casosCerrados.add(
+                  Case(
+                    id: doc.id,
+                    empresaId: data['empresaId'] ?? '',
+                    empresaNombre: data['empresaNombre'] ?? '',
+                    nombre: data['nombre'] ?? '',
+                    tipoRiesgo: data['tipoRiesgo'] ?? '',
+                    descripcionRiesgo: data['descripcionRiesgo'] ?? '',
+                    nivelPeligro: _getNivelPeligroActualizado(data),
+                    fechaCreacion:
+                        (data['fechaCreacion'] as Timestamp?)?.toDate() ??
+                        DateTime.now(),
+                    fechaCierre: (data['fechaCierre'] as Timestamp?)?.toDate(),
+                    cerrado: true,
+                  ),
+                );
               }
             }
 
@@ -898,7 +1038,8 @@ void _mostrarDialogoReporteDiario() {
                   child: casosCerrados.isNotEmpty
                       ? ClosedCasesHeader(
                           casosCerradosCount: casosCerrados.length,
-                          onViewClosedCases: () => _navegarACasosCerrados(casosCerrados),
+                          onViewClosedCases: () =>
+                              _navegarACasosCerrados(casosCerrados),
                         )
                       : const SizedBox.shrink(),
                 ),
@@ -924,21 +1065,36 @@ void _mostrarDialogoReporteDiario() {
                         tipoRiesgo: data['tipoRiesgo'] ?? '',
                         descripcionRiesgo: data['descripcionRiesgo'] ?? '',
                         nivelPeligro: _getNivelPeligroActualizado(data),
-                        fechaCreacion: (data['fechaCreacion'] as Timestamp?)?.toDate() ?? DateTime.now(),
+                        fechaCreacion:
+                            (data['fechaCreacion'] as Timestamp?)?.toDate() ??
+                            DateTime.now(),
                         cerrado: false,
                       );
 
-                      final puedeEditar  = _puedeEditarCaso(authProvider, data);
-                      final puedeEliminar = _puedeEliminarCaso(authProvider, data);
+                      final puedeEditar = _puedeEditarCaso(authProvider, data);
+                      final puedeEliminar = _puedeEliminarCaso(
+                        authProvider,
+                        data,
+                      );
 
                       return CaseCard(
                         caso: caso,
                         onTap: () => _navegarADetalleCaso(casoId, caso),
-                        mostrarNivelRiesgo: _debeMostrarNivelRiesgo(caso, configProvider),
-                        nivelRiesgoColor: _getNivelRiesgoColor(caso, configProvider),
+                        mostrarNivelRiesgo: _debeMostrarNivelRiesgo(
+                          caso,
+                          configProvider,
+                        ),
+                        nivelRiesgoColor: _getNivelRiesgoColor(
+                          caso,
+                          configProvider,
+                        ),
                         mostrarMenu: puedeEditar || puedeEliminar,
-                        onEdit:   puedeEditar   ? () => _editarCaso(casoId, data)             : null,
-                        onDelete: puedeEliminar ? () => _confirmarEliminarCaso(casoId, caso.nombre) : null,
+                        onEdit: puedeEditar
+                            ? () => _editarCaso(casoId, data)
+                            : null,
+                        onDelete: puedeEliminar
+                            ? () => _confirmarEliminarCaso(casoId, caso.nombre)
+                            : null,
                       );
                     },
                   ),
@@ -948,17 +1104,17 @@ void _mostrarDialogoReporteDiario() {
           },
         ),
       ),
-      floatingActionButton: 
+      floatingActionButton:
           // Mostrar FAB si tiene permisos
           _puedeCrearCasos(authProvider)
-            ? FloatingActionButton(
-                heroTag: 'fab_case_list',
-                onPressed: _openAddCaseModal,
-                backgroundColor: Colors.orange,
-                foregroundColor: Colors.white,
-                child: const Icon(FontAwesomeIcons.plus),
-              )
-            : null,
+          ? FloatingActionButton(
+              heroTag: 'fab_case_list',
+              onPressed: _openAddCaseModal,
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+              child: const Icon(FontAwesomeIcons.plus),
+            )
+          : null,
     );
   }
 
@@ -1009,12 +1165,18 @@ void _mostrarDialogoReporteDiario() {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (tipoRiesgo.isNotEmpty)
-              Text(tipoRiesgo, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+              Text(
+                tipoRiesgo,
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
             const SizedBox(height: 4),
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.orange.shade100,
                     borderRadius: BorderRadius.circular(8),
@@ -1047,15 +1209,18 @@ void _mostrarDialogoReporteDiario() {
     );
   }
 
-  void _navegarADetalleCasoOffline(String offlineId, Map<String, dynamic> caso) {
+  void _navegarADetalleCasoOffline(
+    String offlineId,
+    Map<String, dynamic> caso,
+  ) {
     Navigator.pushNamed(
       context,
       '/caseDetail',
       arguments: {
-        "grupoId":   caso['grupoId'] ?? _grupoId,
+        "grupoId": caso['grupoId'] ?? _grupoId,
         "empresaId": caso['empresaId'] ?? _empresaId,
-        "centroId":  caso['centroId'] ?? _centroId,
-        "casoId":    offlineId,
+        "centroId": caso['centroId'] ?? _centroId,
+        "casoId": offlineId,
         "caso": Case(
           id: offlineId,
           empresaId: caso['empresaId'] ?? _empresaId,
@@ -1074,7 +1239,10 @@ void _mostrarDialogoReporteDiario() {
     );
   }
 
-  Future<void> _confirmarDescartarOffline(String offlineId, String nombre) async {
+  Future<void> _confirmarDescartarOffline(
+    String offlineId,
+    String nombre,
+  ) async {
     final confirmar = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -1097,7 +1265,10 @@ void _mostrarDialogoReporteDiario() {
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Descartar', style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'Descartar',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),

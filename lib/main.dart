@@ -26,6 +26,7 @@ import './services/connectivity_service.dart';
 import './services/sync_service.dart';
 import './screens/login_success_animation.dart';
 import './screens/group_admin_screen.dart';
+import './services/license_cache_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -34,11 +35,10 @@ Future<void> main() async {
   await Hive.initFlutter();
   await CaseDraftService.instance.init();
   await OfflineCaseService.instance.init();
+  await LicenseCacheService.instance.init();
 
   // 2. Firebase
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   // 3. Conectividad y sincronización (requiere Firebase listo)
   await ConnectivityService.instance.init();
@@ -58,11 +58,13 @@ class GestionCasosApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => CaseProvider()),
         ChangeNotifierProvider(create: (_) => CentroTrabajoProvider()),
         ChangeNotifierProvider(create: (_) => InterfaceConfigProvider()),
-        ChangeNotifierProvider(create: (_) {
-          final p = ConnectivityProvider();
-          p.init();
-          return p;
-        }),
+        ChangeNotifierProvider(
+          create: (_) {
+            final p = ConnectivityProvider();
+            p.init();
+            return p;
+          },
+        ),
       ],
       child: Consumer<InterfaceConfigProvider>(
         builder: (context, configProvider, _) {
