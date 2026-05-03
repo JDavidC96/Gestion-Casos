@@ -33,8 +33,9 @@ class PdfService {
     if (bytes[0] == 0x89 &&
         bytes[1] == 0x50 &&
         bytes[2] == 0x4E &&
-        bytes[3] == 0x47)
+        bytes[3] == 0x47) {
       return true;
+    }
     // GIF: empieza con 47 49 46
     if (bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46) return true;
     // WebP: empieza con 52 49 46 46 ... 57 45 42 50
@@ -44,8 +45,9 @@ class PdfService {
         bytes[8] == 0x57 &&
         bytes[9] == 0x45 &&
         bytes[10] == 0x42 &&
-        bytes[11] == 0x50)
+        bytes[11] == 0x50) {
       return true;
+    }
     return false;
   }
 
@@ -221,19 +223,24 @@ class PdfService {
     }
     if (inspector.isEmpty) inspector = 'N/A';
 
-    if (imageHallazgo == null && (estadoAbierto['fotoUrl'] as String?) != null)
+    if (imageHallazgo == null && (estadoAbierto['fotoUrl'] as String?) != null) {
       advertencias.add('No se pudo cargar la foto del hallazgo');
-    if (imagenFirmaInspector == null && (data['creadoPor'] as String?) != null)
+    }
+    if (imagenFirmaInspector == null && (data['creadoPor'] as String?) != null) {
       advertencias.add('No se pudo cargar la firma del inspector');
+    }
     if (imagenFirmaClienteAb == null &&
-        (estadoAbierto['firmaClienteUrl'] as String?) != null)
+        (estadoAbierto['firmaClienteUrl'] as String?) != null) {
       advertencias.add('No se pudo cargar la firma del cliente (apertura)');
+    }
     if (imagenFotoCerrado == null &&
-        (estadoCerrado['fotoUrl'] as String?) != null)
+        (estadoCerrado['fotoUrl'] as String?) != null) {
       advertencias.add('No se pudo cargar la foto de la solución');
+    }
     if (imagenFirmaClienteCe == null &&
-        (estadoCerrado['firmaClienteUrl'] as String?) != null)
+        (estadoCerrado['firmaClienteUrl'] as String?) != null) {
       advertencias.add('No se pudo cargar la firma del cliente (cierre)');
+    }
 
     pdf.addPage(
       pw.MultiPage(

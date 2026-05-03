@@ -28,8 +28,8 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
   String _nivelPeligroDefault = 'Medio';
 
   // Configuración de subtipos de riesgo
-  Map<String, bool> _subtiposHabilitados = {};
-  Map<String, bool> _categoriasHabilitadas = {};
+  final Map<String, bool> _subtiposHabilitados = {};
+  final Map<String, bool> _categoriasHabilitadas = {};
   bool _todosLosSubtipos = true;
   // Subtipos personalizados agregados por el admin (por categoria)
   Map<String, List<String>> _subtiposPersonalizados = {};
@@ -641,7 +641,7 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
                   // Selector de nivel de peligro por defecto
                   _buildSubtitle('Nivel de Peligro por Defecto'),
                   DropdownButtonFormField<String>(
-                    value: _nivelPeligroDefault,
+                    initialValue: _nivelPeligroDefault,
                     decoration: const InputDecoration(
                       border: OutlineInputBorder(),
                       hintText: 'Selecciona nivel por defecto',
@@ -895,7 +895,7 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
             trailing: Switch(
               value: categoriaHabilitada,
               onChanged: (value) => _seleccionarCategoria(categoriaNombre, value),
-              activeColor: color,
+              activeThumbColor: color,
             ),
             onTap: () => _seleccionarCategoria(categoriaNombre, !categoriaHabilitada),
           ),
@@ -1031,7 +1031,7 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
         trailing: Switch(
           value: value,
           onChanged: onChanged,
-          activeColor: Colors.blue,
+          activeThumbColor: Colors.blue,
         ),
       ),
     );

@@ -7,7 +7,7 @@ import '../providers/auth_provider.dart';
 class AdminController with ChangeNotifier {
   String? _logoUrl;
   bool _loadingLogo = false;
-  bool _loadingUsers = false;
+  final bool _loadingUsers = false;
   String? _errorMessage;
 
   String? get logoUrl => _logoUrl;

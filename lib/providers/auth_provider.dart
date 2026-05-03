@@ -6,7 +6,7 @@ import '../services/firebase_service.dart';
 class AuthProvider with ChangeNotifier {
   User? _user;
   bool _isLoading = false;
-  bool _isCheckingAuth = true; // true hasta que Firebase confirme el estado inicial
+  final bool _isCheckingAuth = true; // true hasta que Firebase confirme el estado inicial
   String? _errorMessage;
   Map<String, dynamic>? _userData;
 

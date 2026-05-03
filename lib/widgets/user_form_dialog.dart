@@ -154,7 +154,7 @@ class _UserFormDialogState extends State<UserFormDialog> {
                         if (widget.userData == null) const SizedBox(height: 16),
                         if (widget.isSuperAdmin)
                           DropdownButtonFormField<String>(
-                            value: _selectedRole,
+                            initialValue: _selectedRole,
                             items: const [
                               DropdownMenuItem(value: 'super_admin', child: Text('Super Administrador')),
                               DropdownMenuItem(value: 'admin', child: Text('Administrador')),

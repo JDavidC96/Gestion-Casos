@@ -149,7 +149,7 @@ void _mostrarDialogoReporteMensual() {
                       Expanded(
                         child: DropdownButtonFormField<int>(
                           decoration: const InputDecoration(labelText: 'Mes'),
-                          value: mesSeleccionado,
+                          initialValue: mesSeleccionado,
                           items: List.generate(12, (index) {
                             final mes = index + 1;
                             return DropdownMenuItem<int>(
@@ -169,7 +169,7 @@ void _mostrarDialogoReporteMensual() {
                       Expanded(
                         child: DropdownButtonFormField<int>(
                           decoration: const InputDecoration(labelText: 'Año'),
-                          value: anioSeleccionado,
+                          initialValue: anioSeleccionado,
                           items: List.generate(5, (index) {
                             final anio = now.year - index;
                             return DropdownMenuItem<int>(
@@ -204,7 +204,7 @@ void _mostrarDialogoReporteMensual() {
                             labelText: 'Supervisor (opcional)',
                             border: OutlineInputBorder(),
                           ),
-                          value: supervisorSeleccionado,
+                          initialValue: supervisorSeleccionado,
                           items: [
                             const DropdownMenuItem<String>(
                               value: null,
@@ -246,7 +246,7 @@ void _mostrarDialogoReporteMensual() {
                 child: const Text('Cancelar'),
               ),
               ...(() {
-                Future<Map<String, List<QueryDocumentSnapshot>>> _buildCasosPorCentro() async {
+                Future<Map<String, List<QueryDocumentSnapshot>>> buildCasosPorCentro() async {
                   final todosDocs = await FirebaseService.getCasosDocsParaReporte(
                     _grupoId ?? '', _empresaId ?? '');
                   final casosPorCentro = <String, List<QueryDocumentSnapshot>>{};
@@ -271,7 +271,7 @@ void _mostrarDialogoReporteMensual() {
                 Future<void> ejecutar({required bool compartir}) async {
                   setDialogState(() => isLoading = true);
                   try {
-                    final casosPorCentro = await _buildCasosPorCentro();
+                    final casosPorCentro = await buildCasosPorCentro();
                     Navigator.pop(context);
                     if (compartir) {
                       await ReportService.compartirReporteMensualCentrosPDF(

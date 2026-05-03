@@ -29,16 +29,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+    if (_loading) {
+      return const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
       CircularProgressIndicator(color: Colors.white), SizedBox(height: 16),
       Text('Cargando estadísticas...', style: TextStyle(color: Colors.white70)),
     ]));
-    if (_error != null) return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+    }
+    if (_error != null) {
+      return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
       const Icon(Icons.error_outline, size: 64, color: Colors.white70), const SizedBox(height: 16),
       Text('Error: $_error', style: const TextStyle(color: Colors.white70), textAlign: TextAlign.center),
       const SizedBox(height: 16),
       ElevatedButton.icon(onPressed: _cargar, icon: const Icon(Icons.refresh), label: const Text('Reintentar')),
     ]));
+    }
 
     final s = _stats!;
     return RefreshIndicator(onRefresh: _cargar, child: ListView(padding: const EdgeInsets.all(16), children: [

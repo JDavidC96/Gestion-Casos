@@ -73,8 +73,9 @@ class DashboardService {
       final d = doc.data();
       final role = d['role'] as String? ?? '';
       final gid = d['grupoId'] as String? ?? '';
-      if (role == 'admin') admins++;
-      else if (role == 'superinspector') superInsp++;
+      if (role == 'admin') {
+        admins++;
+      } else if (role == 'superinspector') superInsp++;
       else if (role == 'inspector') insp++;
       if (gid.isNotEmpty) usersByGroup[gid] = (usersByGroup[gid] ?? 0) + 1;
     }

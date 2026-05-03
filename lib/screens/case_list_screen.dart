@@ -122,8 +122,9 @@ class _CaseListScreenState extends State<CaseListScreen> {
     );
 
     if (authProvider.grupoId != null) {
-      if (authProvider.grupoId != null)
+      if (authProvider.grupoId != null) {
         configProvider.loadConfig(authProvider.grupoId!);
+      }
     }
   }
 
@@ -487,7 +488,7 @@ class _CaseListScreenState extends State<CaseListScreen> {
                               labelText: 'Supervisor (opcional)',
                               border: OutlineInputBorder(),
                             ),
-                            value: supervisorSeleccionado,
+                            initialValue: supervisorSeleccionado,
                             items: [
                               const DropdownMenuItem<String>(
                                 value: null,

@@ -209,7 +209,7 @@ class _EmpresaFormDialogFirebaseState extends State<EmpresaFormDialogFirebase> {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<Map<String, dynamic>>(
-              value: _selectedOption,
+              initialValue: _selectedOption,
               decoration: const InputDecoration(
                 labelText: "Icono",
                 border: OutlineInputBorder(),

@@ -205,7 +205,7 @@ class _CentroTrabajoFormDialogFirebaseState extends State<CentroTrabajoFormDialo
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
-                value: _tipoSeleccionado,
+                initialValue: _tipoSeleccionado,
                 decoration: const InputDecoration(
                   labelText: "Tipo de centro",
                   border: OutlineInputBorder(),
@@ -221,7 +221,7 @@ class _CentroTrabajoFormDialogFirebaseState extends State<CentroTrabajoFormDialo
                             value: tipo,
                             child: Text(tipo),
                           ))
-                      .toList(),
+                      ,
                 ],
                 validator: (value) {
                   if (value == null) {

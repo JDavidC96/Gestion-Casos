@@ -163,13 +163,43 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
 
     if (error != null) {
       // ❌ Fallo — la foto local ya fue eliminada por el controller
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error), backgroundColor: Colors.red, duration: const Duration(seconds: 5)),
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(children: [
+            Icon(Icons.error_outline, color: Colors.red),
+            SizedBox(width: 10),
+            Text('Error al subir foto'),
+          ]),
+          content: Text(error),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Aceptar'),
+            ),
+          ],
+        ),
       );
     } else if (_ctrl.fotoAbiertoUrl != null || _ctrl.fotoCerradoUrl != null) {
       // ✅ Éxito
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Foto subida exitosamente'), backgroundColor: Colors.green, duration: Duration(seconds: 2)),
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(children: [
+            Icon(Icons.check_circle_outline, color: Colors.green),
+            SizedBox(width: 10),
+            Text('Foto subida'),
+          ]),
+          content: const Text('La foto se subió al servidor exitosamente.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Aceptar'),
+            ),
+          ],
+        ),
       );
     }
   }

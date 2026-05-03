@@ -227,7 +227,7 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
   Widget _buildCategoriaSelector(
       List<String> categorias, List<Map<String, dynamic>> todasLasCats) {
     return DropdownButtonFormField<String>(
-      value: categorias.contains(_selectedCategoria)
+      initialValue: categorias.contains(_selectedCategoria)
           ? _selectedCategoria
           : (categorias.isNotEmpty ? categorias[0] : null),
       isExpanded: true,
@@ -277,7 +277,7 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
 
   Widget _buildSubgrupoSelector(List<String> subgrupos) {
     return DropdownButtonFormField<String>(
-      value: subgrupos.contains(_selectedSubgrupo) ? _selectedSubgrupo : null,
+      initialValue: subgrupos.contains(_selectedSubgrupo) ? _selectedSubgrupo : null,
       isExpanded: true,
       decoration: const InputDecoration(
         labelText: "Tipo específico",
@@ -302,7 +302,7 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
   Widget _buildNivelPeligroSelector(bool mostrar) {
     if (!mostrar) return const SizedBox.shrink();
     return DropdownButtonFormField<String>(
-      value: _selectednivelPeligro,
+      initialValue: _selectednivelPeligro,
       decoration: const InputDecoration(
         labelText: "Nivel de peligro",
         border: OutlineInputBorder(),

@@ -28,7 +28,7 @@ class RiskLevelSelector extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
-          value: (nivelSeleccionado == null || nivelSeleccionado!.isEmpty)
+          initialValue: (nivelSeleccionado == null || nivelSeleccionado!.isEmpty)
               ? null
               : nivelSeleccionado,
           decoration: const InputDecoration(

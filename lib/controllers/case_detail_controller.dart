@@ -147,13 +147,18 @@ class CaseDetailController with ChangeNotifier {
     if (userData == null) return;
     final firmaUrl = userData['firmaUrl'] as String?;
     if (firmaUrl == null) return;
-    firmaAbiertoUrl = firmaUrl;
-    firmaCerradoUrl = firmaUrl;
-    final bytes = await _descargarDesdeDrive(firmaUrl);
-    if (bytes != null) {
-      firmaAbierto = bytes;
-      firmaCerrado = bytes;
-      notifyListeners();
+    // Solo usar la firma del perfil si el caso no tiene ya una firma específica
+    // cargada desde Firestore — evita sobreescribir la firma guardada del caso.
+    if (firmaAbiertoUrl == null) firmaAbiertoUrl = firmaUrl;
+    if (firmaCerradoUrl == null) firmaCerradoUrl = firmaUrl;
+    // Solo descargar bytes si todavía no se tienen
+    if (firmaAbierto == null || firmaCerrado == null) {
+      final bytes = await _descargarDesdeDrive(firmaUrl);
+      if (bytes != null) {
+        if (firmaAbierto == null) firmaAbierto = bytes;
+        if (firmaCerrado == null) firmaCerrado = bytes;
+        notifyListeners();
+      }
     }
   }
 
@@ -228,7 +233,9 @@ class CaseDetailController with ChangeNotifier {
   Future<String?> tomarFoto({required bool esEstadoAbierto}) async {
     if (tomandoFoto) return null;
     if ((esEstadoAbierto && estadoAbiertoGuardado) ||
-        (!esEstadoAbierto && estadoCerradoGuardado)) return null;
+        (!esEstadoAbierto && estadoCerradoGuardado)) {
+      return null;
+    }
 
     tomandoFoto = true;
     notifyListeners();
@@ -345,6 +352,19 @@ class CaseDetailController with ChangeNotifier {
 
       estadoAbiertoGuardado = true;
       responsableAbiertoNombre = usuarioNombre;
+
+      // Actualizar URL de firma del cliente y reflejar en casoData
+      // para que ReportScreen reciba los datos correctos sin recargar.
+      if (firmaClienteUrl != null) {
+        firmaClienteAbiertoUrl = firmaClienteUrl;
+      }
+      final eaActual = Map<String, dynamic>.from(
+          (casoData?['estadoAbierto'] as Map<String, dynamic>?) ?? {});
+      eaActual['firmaClienteUrl'] = firmaClienteAbiertoUrl;
+      eaActual['fotoUrl']         = fotoAbiertoUrl;
+      eaActual['guardado']        = true;
+      casoData = {...?casoData, 'estadoAbierto': eaActual};
+
       return null;
     } catch (e) {
       return 'Error: $e';
@@ -394,6 +414,18 @@ class CaseDetailController with ChangeNotifier {
       estadoCerradoGuardado = true;
       casoCerrado = true;
       responsableCerradoNombre = usuarioNombre;
+
+      // Actualizar URL de firma del cliente y reflejar en casoData
+      if (firmaClienteUrl != null) {
+        firmaClienteCerradoUrl = firmaClienteUrl;
+      }
+      final ecActual = Map<String, dynamic>.from(
+          (casoData?['estadoCerrado'] as Map<String, dynamic>?) ?? {});
+      ecActual['firmaClienteUrl'] = firmaClienteCerradoUrl;
+      ecActual['fotoUrl']         = fotoCerradoUrl;
+      ecActual['guardado']        = true;
+      casoData = {...?casoData, 'estadoCerrado': ecActual};
+
       return null;
     } catch (e) {
       return 'Error: $e';

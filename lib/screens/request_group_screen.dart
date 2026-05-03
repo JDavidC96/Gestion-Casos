@@ -254,8 +254,9 @@ class _RequestGroupScreenState extends State<RequestGroupScreen> {
     if (v.length < 6)                  return 'Mínimo 6 caracteres';
     if (!v.contains(RegExp(r'[A-Z]'))) return 'Debe contener una mayúscula';
     if (!v.contains(RegExp(r'[0-9]'))) return 'Debe contener un número';
-    if (!v.contains(RegExp(r'[!@#$%^&*(),.?":{}|<>]')))
+    if (!v.contains(RegExp(r'[!@#$%^&*(),.?":{}|<>]'))) {
       return 'Debe contener un carácter especial';
+    }
     return null;
   }
 
@@ -501,8 +502,9 @@ class _RequestGroupScreenState extends State<RequestGroupScreen> {
               icon: Icons.person,
               validator: (v) {
                 if (v == null || v.trim().isEmpty) return 'Ingrese el nombre';
-                if (v.trim().split(' ').length < 2)
+                if (v.trim().split(' ').length < 2) {
                   return 'Ingrese nombre y apellido';
+                }
                 return null;
               },
             ),
@@ -515,8 +517,9 @@ class _RequestGroupScreenState extends State<RequestGroupScreen> {
               keyboardType: TextInputType.emailAddress,
               validator: (v) {
                 if (v == null || v.trim().isEmpty) return 'Ingrese el correo';
-                if (!v.contains('@') || !v.contains('.'))
+                if (!v.contains('@') || !v.contains('.')) {
                   return 'Correo inválido';
+                }
                 return null;
               },
             ),
@@ -559,8 +562,9 @@ class _RequestGroupScreenState extends State<RequestGroupScreen> {
               ),
               validator: (v) {
                 if (v == null || v.isEmpty) return 'Confirme la contraseña';
-                if (v != _passwordController.text)
+                if (v != _passwordController.text) {
                   return 'Las contraseñas no coinciden';
+                }
                 return null;
               },
             ),
