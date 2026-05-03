@@ -32,6 +32,11 @@ class CaseStateCardFirebase extends StatefulWidget {
   final bool habilitarFirmas;
   final bool mostrarNivelPeligro;
 
+  // Modo texto libre: el inspector describe el peligro sin seleccionar catálogo
+  final bool modoTextoLibrePeligro;
+  final String? tipoPeligroLibre;
+  final ValueChanged<String>? onTipoPeligroLibreChanged;
+
   // Firma del cliente (nuevos)
   final ValueChanged<Uint8List?>? onFirmaClienteChanged;
   final ValueChanged<String>? onNombreClienteChanged;
@@ -67,6 +72,9 @@ class CaseStateCardFirebase extends StatefulWidget {
     this.habilitarFotos = true,
     this.habilitarFirmas = true,
     this.mostrarNivelPeligro = true,
+    this.modoTextoLibrePeligro = false,
+    this.tipoPeligroLibre,
+    this.onTipoPeligroLibreChanged,
   });
 
   @override
@@ -162,7 +170,10 @@ class _CaseStateCardFirebaseState extends State<CaseStateCardFirebase> {
               const SizedBox(height: 16),
               _buildUbicacionField(),
               const SizedBox(height: 16),
-              if (widget.mostrarNivelPeligro) ...[  
+              if (widget.modoTextoLibrePeligro) ...[
+                _buildTipoPeligroLibreField(),
+                const SizedBox(height: 16),
+              ] else if (widget.mostrarNivelPeligro) ...[
                 RiskLevelSelector(
                   nivelSeleccionado: widget.nivelPeligro,
                   onChanged: widget.bloqueado ? null : widget.onnivelPeligroChanged,
@@ -226,6 +237,35 @@ class _CaseStateCardFirebaseState extends State<CaseStateCardFirebase> {
               ],
             ),
           ),
+      ],
+    );
+  }
+
+  Widget _buildTipoPeligroLibreField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Tipo de peligro *',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          onChanged: widget.onTipoPeligroLibreChanged,
+          controller: TextEditingController(text: widget.tipoPeligroLibre ?? '')
+            ..selection = TextSelection.fromPosition(
+                TextPosition(offset: (widget.tipoPeligroLibre ?? '').length)),
+          readOnly: widget.bloqueado,
+          maxLines: 2,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: InputDecoration(
+            hintText: 'Describa el tipo de peligro identificado...',
+            border: const OutlineInputBorder(),
+            filled: widget.bloqueado,
+            fillColor: widget.bloqueado ? Colors.grey[100] : null,
+            suffixIcon: widget.bloqueado ? const Icon(Icons.lock) : null,
+          ),
+        ),
       ],
     );
   }

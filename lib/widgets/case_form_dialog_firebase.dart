@@ -34,6 +34,7 @@ class CaseFormDialogFirebase extends StatefulWidget {
 class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
   final _formKey = GlobalKey<FormState>();
   final _nombreController = TextEditingController();
+  final _tipoPeligroLibreCtrl = TextEditingController();
 
   String _selectedCategoria = '';
   String? _selectedSubgrupo;
@@ -108,11 +109,17 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
   @override
   void dispose() {
     _nombreController.dispose();
+    _tipoPeligroLibreCtrl.dispose();
     super.dispose();
   }
 
-  bool get _isFormValid =>
-      _nombreController.text.trim().isNotEmpty && _selectedSubgrupo != null;
+  bool get _isFormValid {
+    final config = Provider.of<InterfaceConfigProvider>(context, listen: false).currentConfig;
+    final modoLibre = config['modoTextoLibrePeligro'] as bool? ?? false;
+    if (_nombreController.text.trim().isEmpty) return false;
+    if (modoLibre) return _tipoPeligroLibreCtrl.text.trim().isNotEmpty;
+    return _selectedSubgrupo != null;
+  }
 
   Future<void> _handleSave() async {
     if (!_formKey.currentState!.validate()) return;
@@ -140,6 +147,9 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
       final connectivityProvider =
           Provider.of<ConnectivityProvider>(context, listen: false);
 
+      final modoLibre =
+          configProvider.currentConfig['modoTextoLibrePeligro'] as bool? ?? false;
+
       final todasLasCats = [
         ...matrizPeligros,
         ...configProvider.categoriasPersonalizadas,
@@ -149,17 +159,25 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
         'empresaId': widget.empresaId,
         'empresaNombre': widget.empresa.nombre,
         'nombre': _nombreController.text.trim(),
-        'tipoRiesgo': _selectedCategoria,
-        'subgrupoRiesgo': _selectedSubgrupo,
         'cerrado': false,
         'centroId': centroId,
         'centroNombre': widget.centroNombre,
         'grupoId': grupoId,
         'grupoNombre': widget.grupoNombre,
-        'numeroCategoria':
-            RiskData.getNumeroCategoriaFromAll(_selectedCategoria, todasLasCats),
         'creadoPor': authProvider.userData?['uid'],
       };
+
+      if (modoLibre) {
+        // Modo texto libre: no hay categoría del catálogo
+        casoData['tipoPeligroLibre'] = _tipoPeligroLibreCtrl.text.trim();
+        casoData['modoTextoLibrePeligro'] = true;
+      } else {
+        // Modo catálogo: categoría + subcategoría estándar
+        casoData['tipoRiesgo'] = _selectedCategoria;
+        casoData['subgrupoRiesgo'] = _selectedSubgrupo;
+        casoData['numeroCategoria'] =
+            RiskData.getNumeroCategoriaFromAll(_selectedCategoria, todasLasCats);
+      }
 
       if (configProvider.isFeatureEnabled('mostrarNivelPeligroEnDialog')) {
         casoData['nivelPeligro'] = _selectednivelPeligro;
@@ -222,6 +240,38 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
       case 'Alto':  return Colors.red[400]!;
       default:      return Colors.grey;
     }
+  }
+
+  /// Muestra un TextField libre o los dos dropdowns (categoría + subgrupo)
+  /// dependiendo de la configuración del grupo.
+  Widget _buildPeligroSection(
+    bool modoLibre,
+    List<String> categorias,
+    List<String> subgrupos,
+    List<Map<String, dynamic>> todasLasCats,
+  ) {
+    if (modoLibre) {
+      return TextFormField(
+        controller: _tipoPeligroLibreCtrl,
+        textCapitalization: TextCapitalization.sentences,
+        maxLines: 2,
+        decoration: const InputDecoration(
+          labelText: 'Tipo de peligro *',
+          hintText: 'Describe el tipo de peligro identificado...',
+          border: OutlineInputBorder(),
+        ),
+        onChanged: (_) => setState(() {}), // refrescar _isFormValid
+        validator: (value) =>
+            (value == null || value.trim().isEmpty) ? 'Describe el tipo de peligro' : null,
+      );
+    }
+    return Column(
+      children: [
+        _buildCategoriaSelector(categorias, todasLasCats),
+        const SizedBox(height: 16),
+        _buildSubgrupoSelector(subgrupos),
+      ],
+    );
   }
 
   Widget _buildCategoriaSelector(
@@ -349,6 +399,7 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
           : (categoriasDisponibles.isNotEmpty ? categoriasDisponibles[0] : 'Físico'),
     );
     final mostrarNivelPeligro = config['mostrarNivelPeligroEnDialog'] as bool? ?? false;
+    final modoTextoLibrePeligro = config['modoTextoLibrePeligro'] as bool? ?? false;
     final isOffline = !connectivityProvider.isOnline;
 
     return Dialog(
@@ -520,10 +571,12 @@ class _CaseFormDialogFirebaseState extends State<CaseFormDialogFirebase> {
                         ),
                         const SizedBox(height: 16),
 
-                        _buildCategoriaSelector(categoriasDisponibles, todasLasCats),
-                        const SizedBox(height: 16),
-
-                        _buildSubgrupoSelector(subgruposDisponibles),
+                        _buildPeligroSection(
+                          modoTextoLibrePeligro,
+                          categoriasDisponibles,
+                          subgruposDisponibles,
+                          todasLasCats,
+                        ),
                         const SizedBox(height: 16),
 
                         _buildNivelPeligroSelector(mostrarNivelPeligro),

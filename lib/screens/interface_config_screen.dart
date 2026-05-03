@@ -34,6 +34,10 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
   // Subtipos personalizados agregados por el admin (por categoria)
   Map<String, List<String>> _subtiposPersonalizados = {};
 
+  // Cuando está activo, el inspector escribe el peligro como texto libre
+  // y la sección de tipos/subtipos del catálogo no aplica.
+  bool _modoTextoLibrePeligro = false;
+
   // Categorías personalizadas del grupo (nuevas categorías completas)
   List<Map<String, dynamic>> _categoriasPersonalizadas = [];
 
@@ -126,6 +130,9 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
       _mostrarNivelPeligroEnDetalle = _currentConfig['mostrarNivelPeligroEnDetalle'] ?? true;
       _nivelPeligroDefault = _currentConfig['nivelPeligroDefault'] ?? 'Medio';
 
+      // Modo texto libre para peligro
+      _modoTextoLibrePeligro = _currentConfig['modoTextoLibrePeligro'] ?? false;
+
       // Cargar configuración de subtipos
       _todosLosSubtipos = _currentConfig['todosLosSubtipos'] ?? true;
       
@@ -216,6 +223,8 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
         'mostrarNivelPeligroEnDetalle': _mostrarNivelPeligroEnDetalle,
         'nivelPeligroDefault': _nivelPeligroDefault,
 
+        'modoTextoLibrePeligro': _modoTextoLibrePeligro,
+
         'todosLosSubtipos': _todosLosSubtipos,
         'subtiposHabilitados': _subtiposHabilitados,
         'categoriasHabilitadas': _categoriasHabilitadas,
@@ -266,6 +275,7 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
       _mostrarNivelPeligroEnDetalle = true;
       _nivelPeligroDefault = 'Medio';
 
+      _modoTextoLibrePeligro = false;
       _todosLosSubtipos = true;
       _subtiposPersonalizados = {};
       _inicializarSubtipos();
@@ -610,15 +620,22 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
                   ),
                   const SizedBox(height: 24),
 
-                  // Sección: Tipos de Peligro (estándar + habilitar/deshabilitar)
-                  _buildSectionTitle('Configuración de Tipos de Peligro'),
-                  _buildSubtiposConfiguracion(),
+                  // Sección: Modo de ingreso del peligro
+                  _buildSectionTitle('Modo de Ingreso del Peligro'),
+                  _buildModoTextoLibreCard(),
                   const SizedBox(height: 24),
 
-                  // Sección: Categorías Personalizadas (CRUD)
-                  _buildSectionTitle('Categorías Personalizadas'),
-                  _buildCategoriasPersonalizadas(),
-                  const SizedBox(height: 24),
+                  // Sección: Tipos de Peligro (oculta si modo texto libre está activo)
+                  if (!_modoTextoLibrePeligro) ...[
+                    _buildSectionTitle('Configuración de Tipos de Peligro'),
+                    _buildSubtiposConfiguracion(),
+                    const SizedBox(height: 24),
+
+                    // Sección: Categorías Personalizadas (CRUD)
+                    _buildSectionTitle('Categorías Personalizadas'),
+                    _buildCategoriasPersonalizadas(),
+                    const SizedBox(height: 24),
+                  ],
 
                   // Sección: Configuración de Nivel de Peligro
                   _buildSectionTitle('Configuración de Nivel de Peligro'),
@@ -718,6 +735,78 @@ class _InterfaceConfigScreenState extends State<InterfaceConfigScreen> {
   // ═══════════════════════════════════════════════════════════════════
   //  WIDGETS
   // ═══════════════════════════════════════════════════════════════════
+
+  Widget _buildModoTextoLibreCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Toggle principal
+            Row(
+              children: [
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Peligro de texto libre',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        'El inspector escribe el tipo de peligro manualmente, '
+                        'sin seleccionar categoría ni subcategoría del catálogo.',
+                        style: TextStyle(fontSize: 13, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: _modoTextoLibrePeligro,
+                  onChanged: (value) =>
+                      setState(() => _modoTextoLibrePeligro = value),
+                  activeColor: Colors.blue,
+                ),
+              ],
+            ),
+            // Nota informativa cuando está activo
+            if (_modoTextoLibrePeligro) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.07),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.withOpacity(0.25)),
+                ),
+                child: const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.info_outline, size: 18, color: Colors.blue),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'En este modo, al crear o editar un caso el inspector '
+                        'verá un campo de texto abierto para describir el peligro. '
+                        'La configuración de tipos de peligro y categorías personalizadas '
+                        'no aplica mientras esta opción esté activa.',
+                        style: TextStyle(fontSize: 13, color: Colors.blue),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildSubtiposConfiguracion() {
     return Card(

@@ -25,6 +25,7 @@ class CaseDetailController with ChangeNotifier {
 
   String descripcionHallazgo = '';
   String nivelPeligro = 'Medio';
+  String? tipoPeligroLibre;   // Modo texto libre — alternativa al catálogo de peligros
   String? recomendacionesControl;
   String? fotoAbiertoPath;
   String? fotoAbiertoUrl;
@@ -346,6 +347,8 @@ class CaseDetailController with ChangeNotifier {
           'nombreCliente': nombreClienteAbierto,
       };
       if (mostrarNivelPeligro) estadoAbiertoData['nivelPeligro'] = nivelPeligro;
+      if (tipoPeligroLibre != null && tipoPeligroLibre!.trim().isNotEmpty)
+        estadoAbiertoData['tipoPeligroLibre'] = tipoPeligroLibre!.trim();
 
       await FirebaseService.updateEstadoAbierto(
           grupoId ?? '', empresaId ?? '', centroId ?? '', casoId!, estadoAbiertoData);
@@ -442,6 +445,7 @@ class CaseDetailController with ChangeNotifier {
   Map<String, dynamic> _buildDraft() => {
     'descripcionHallazgo': descripcionHallazgo,
     'nivelPeligro': nivelPeligro,
+    'tipoPeligroLibre': tipoPeligroLibre,
     'recomendacionesControl': recomendacionesControl,
     'fotoAbiertoPath': fotoAbiertoPath,
     'fotoAbiertoUrl': fotoAbiertoUrl,
@@ -487,6 +491,7 @@ class CaseDetailController with ChangeNotifier {
     if (!estadoAbiertoGuardado) {
       descripcionHallazgo    = draft['descripcionHallazgo'] ?? descripcionHallazgo;
       nivelPeligro           = draft['nivelPeligro'] ?? nivelPeligro;
+      tipoPeligroLibre       = draft['tipoPeligroLibre'] ?? tipoPeligroLibre;
       final ut = draft['ubicacionTexto'];
       if (ut != null && ubicacionTextoCtrl.text.isEmpty) ubicacionTextoCtrl.text = ut;
       recomendacionesControl = draft['recomendacionesControl'] ?? recomendacionesControl;
@@ -531,6 +536,7 @@ class CaseDetailController with ChangeNotifier {
     if (estadoAbierto != null) {
       descripcionHallazgo     = estadoAbierto['descripcionHallazgo'] as String? ?? '';
       nivelPeligro            = estadoAbierto['nivelPeligro'] as String? ?? '';
+      tipoPeligroLibre        = estadoAbierto['tipoPeligroLibre'] as String?;
       recomendacionesControl  = estadoAbierto['recomendacionesControl'] as String?;
       fotoAbiertoUrl          = estadoAbierto['fotoUrl'] as String?;
       nombreClienteAbierto    = estadoAbierto['nombreClienteAbierto'] as String?;

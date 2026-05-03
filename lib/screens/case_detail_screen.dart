@@ -311,6 +311,9 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
     final configProvider = Provider.of<InterfaceConfigProvider>(context);
     final mostrarNivelPeligro = configProvider.isFeatureEnabled('mostrarNivelPeligroEnDetalle');
     final habilitarFotos = configProvider.isFeatureEnabled('habilitarFotos');
+    // modoTextoLibrePeligro tiene default false — no usar isFeatureEnabled (devuelve ?? true)
+    final modoTextoLibrePeligro =
+        configProvider.currentConfig['modoTextoLibrePeligro'] as bool? ?? false;
 
     final onTomarFotoAbierto = habilitarFotos
         ? () => _onTomarFoto(esEstadoAbierto: true)
@@ -388,6 +391,12 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
                                 habilitarFotos: habilitarFotos,
                                 habilitarFirmas: configProvider.isFeatureEnabled('habilitarFirmas'),
                                 mostrarNivelPeligro: mostrarNivelPeligro,
+                                modoTextoLibrePeligro: modoTextoLibrePeligro,
+                                tipoPeligroLibre: _ctrl.tipoPeligroLibre,
+                                onTipoPeligroLibreChanged: (value) {
+                                  setState(() => _ctrl.tipoPeligroLibre = value);
+                                  _ctrl.scheduleDraftSave();
+                                },
                                 onUbicacionChanged: (_) => _ctrl.scheduleDraftSave(),
                                 onDescripcionChanged: (value) {
                                   setState(() => _ctrl.descripcionHallazgo = value);

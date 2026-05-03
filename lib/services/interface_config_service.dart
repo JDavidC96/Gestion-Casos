@@ -23,6 +23,9 @@ class InterfaceConfigService {
     'mostrarFechas': true,
     'habilitarBusqueda': true,
     'ordenamiento': 'fecha', // 'fecha', 'nombre', 'riesgo'
+    // Cuando es true, el inspector escribe el peligro como texto libre
+    // en lugar de seleccionar categoría + subcategoría del catálogo.
+    'modoTextoLibrePeligro': false,
   };
 
   // Obtener configuración de interfaz por grupo
@@ -169,7 +172,7 @@ class InterfaceConfigService {
       'mostrarCasosCerrados', 'mostrarEstadisticas', 'habilitarFotos',
       'habilitarFirmas', 'mostrarnivelPeligro', 'mostrarUbicacion',
       'habilitarReportes', 'mostrarCentrosTrabajo', 'habilitarNotificaciones',
-      'mostrarFechas', 'habilitarBusqueda'
+      'mostrarFechas', 'habilitarBusqueda', 'modoTextoLibrePeligro',
     ];
     
     for (var field in booleanFields) {
